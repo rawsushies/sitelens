@@ -24,27 +24,27 @@ export interface ElevationData {
 
 const ELEVATION_METADATA: DatasetMetadata = {
   id: 'open-meteo-elevation',
-  title: 'Copernicus / SRTM High-Resolution Digital Elevation Model (DEM)',
-  description: 'Surface ground elevation referenced to Mean Sea Level (EGM96 geoid / WGS84 vertical datum).',
-  source: 'Copernicus DEM GLO-90 / SRTM 90m via Open-Meteo Elevation API',
+  title: 'Digital Elevation Model (DEM) Ground Surface Height',
+  description: 'Surface ground elevation referenced to Mean Sea Level (EGM96 geoid / MSL vertical datum).',
+  source: 'Open-Meteo Elevation API (Multi-Source Global DEM Compilation: Copernicus GLO-90, SRTM, and GTOPO30/ETOPO1)',
   sourceUrl: 'https://open-meteo.com/en/docs/elevation-api',
   license: {
-    id: 'Copernicus-Open-Access',
-    name: 'Copernicus Open Access / Public Domain',
-    url: 'https://spacedata.copernicus.eu/',
-    attributionStatement: 'European Space Agency (ESA) Copernicus DEM',
+    id: 'Open-Meteo-Elevation-Blend',
+    name: 'Open Data Commons / Public Domain Composite',
+    url: 'https://open-meteo.com',
+    attributionStatement: 'Elevation data by Open-Meteo.com (Copernicus / NASA / USGS blend)',
     requiresAttribution: true,
     commercialUseAllowed: true,
   },
-  attribution: 'Elevation data © European Space Agency Copernicus DEM (90m)',
-  timestampOrReferencePeriod: 'Copernicus GLO-90 Baseline (2020 Release)',
-  spatialResolution: '90-metre horizontal grid cell',
-  method: 'Bicubic spline interpolation from Copernicus GLO-90 / SRTM global raster tiles',
+  attribution: 'Elevation data by Open-Meteo.com (Copernicus DEM / SRTM blend)',
+  timestampOrReferencePeriod: 'Multi-Mission Global DEM Baseline (2000-2020)',
+  spatialResolution: 'Variable raster DEM resolution (~90m in continental landmasses; up to 1km in polar/ocean margins)',
+  method: 'Bilinear interpolation from composite global DEM raster grid',
   crs: 'EPSG:4326 horizontal, EGM96 geoid vertical',
   units: {
     elevation: 'metres above sea level (m ASL)'
   },
-  limitations: '90m macro elevation grid. Reflects bare-earth surface smoothed across the grid cell. Not a certified legal boundary survey or architectural finished-floor datum.',
+  limitations: 'Composite raster DEM compilation. High-latitude and oceanic boundaries rely on coarse global models. Surface heights are smoothed across the grid cell; not suitable as a legal boundary survey or architectural finished-floor datum.',
   retrievedAt: new Date().toISOString()
 };
 

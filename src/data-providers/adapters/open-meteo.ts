@@ -88,7 +88,7 @@ const WEATHER_METADATA: DatasetMetadata = {
   },
   attribution: 'Weather data by Open-Meteo.com (CC BY 4.0)',
   timestampOrReferencePeriod: 'Current NWP Run & Near-Surface Interpolation',
-  spatialResolution: '1km to 11km depending on regional domain (e.g. DWD ICON-D2 2km in Central Europe, ECMWF IFS 9km / 11km Global)',
+  spatialResolution: 'Variable NWP grid resolution (~1.5 km to ~11 km globally; specific sub-model is unversioned in default Open-Meteo endpoint)',
   method: 'Bilinear spatial interpolation from closest NWP grid points with pressure-height reduction',
   crs: 'EPSG:4326',
   units: {
@@ -98,7 +98,7 @@ const WEATHER_METADATA: DatasetMetadata = {
     windDirection: 'degrees clockwise from true north',
     precipitation: 'mm'
   },
-  limitations: 'Regional atmospheric model data. Does not resolve building microclimate, street canyon wind eddies, or micro-scale urban heat islands.',
+  limitations: 'Regional atmospheric model data. Open-Meteo blends multiple national weather service models (ECMWF, DWD, NOAA, Météo-France) without per-point sub-model attribution in the default endpoint. Does not resolve building microclimate, street canyon wind eddies, or micro-scale urban heat islands.',
   retrievedAt: new Date().toISOString()
 };
 
@@ -149,14 +149,9 @@ export class OpenMeteoWeatherProvider implements IDataProvider<WeatherQuery, Wea
       ? WMO_WEATHER_CODES[current.weather_code] 
       : 'Atmospheric observation';
 
-    // Model provenance dynamic check
-    const isEurope = lat >= 35 && lat <= 70 && lng >= -15 && lng <= 40;
-    const verifiedModelSource = isEurope 
-      ? 'DWD ICON-EU / ECMWF IFS Blend via Open-Meteo' 
-      : 'ECMWF IFS / NOAA GFS Global Blend via Open-Meteo';
-    const verifiedResolution = isEurope 
-      ? '7 km (ICON-EU) to 9 km (ECMWF IFS) NWP grid' 
-      : '11 km NWP grid cell (bilinearly interpolated)';
+    // Authoritative model provenance without geographic region inference heuristics
+    const verifiedModelSource = 'Open-Meteo Best-Match Global NWP Ensemble';
+    const verifiedResolution = 'Variable NWP grid resolution (~1.5 km to ~11 km globally; specific sub-model unversioned in default endpoint)';
 
     const metrics: Record<string, ProvenancedMetric> = {
       ambient_temperature: {

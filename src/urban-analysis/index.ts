@@ -75,17 +75,23 @@ export async function fetchUrbanContext(
       type: el.type
     }));
 
+    const isFiltered = Boolean(options?.siteBoundary);
+
     const metrics: Record<string, ProvenancedMetric> = {
       osm_buildings_nearby: {
         id: 'urban-bldg-count',
         name: 'nearby_building_footprints',
-        label: 'Adjacent Building Footprints',
+        label: isFiltered ? 'Site Boundary Building Footprints' : 'Adjacent Building Footprints',
         value: data.buildingCount,
-        formattedValue: `${data.buildingCount} structures${isTruncated ? ' (partial)' : ''}`,
+        formattedValue: isFiltered 
+          ? `${data.buildingCount} within site (${data.queriedTotals.buildings} in ${radiusMeters}m buffer)${isTruncated ? ' [partial]' : ''}`
+          : `${data.buildingCount} structures${isTruncated ? ' (partial)' : ''}`,
         unit: 'count',
         classification: 'dataset-derived',
         source: dataset.metadata.source,
-        calculationMethod: `Radial spatial query with full vector geometry around centroid (${radiusMeters}m radius)`,
+        calculationMethod: isFiltered
+          ? `Geometry polygon intersection with active site boundary (${data.buildingCount} retained from ${data.queriedTotals.buildings} in ${radiusMeters}m buffer)`
+          : `Radial spatial query with full vector geometry around centroid (${radiusMeters}m radius)`,
         spatialResolution: dataset.metadata.spatialResolution,
         timestampOrReferencePeriod: dataset.metadata.timestampOrReferencePeriod,
         limitations: isTruncated 
@@ -97,13 +103,17 @@ export async function fetchUrbanContext(
       osm_roads_nearby: {
         id: 'urban-roads-count',
         name: 'nearby_transportation_links',
-        label: 'Surrounding Road Network Segments',
+        label: isFiltered ? 'Site-Intersecting Road Links' : 'Surrounding Road Network Segments',
         value: data.roadCount,
-        formattedValue: `${data.roadCount} segments`,
+        formattedValue: isFiltered
+          ? `${data.roadCount} crossing site (${data.queriedTotals.roads} in buffer)`
+          : `${data.roadCount} segments`,
         unit: 'count',
         classification: 'dataset-derived',
         source: dataset.metadata.source,
-        calculationMethod: `Highway tag enumeration with geometry within ${radiusMeters}m radius`,
+        calculationMethod: isFiltered
+          ? `Polyline intersection with active site boundary (${data.roadCount} retained from ${data.queriedTotals.roads} in ${radiusMeters}m buffer)`
+          : `Highway tag enumeration with geometry within ${radiusMeters}m radius`,
         spatialResolution: 'Vector centerline polyline',
         timestampOrReferencePeriod: dataset.metadata.timestampOrReferencePeriod,
         limitations: 'Segments are partitioned at intersections and administrative boundaries; does not equate to unique continuous corridors.',

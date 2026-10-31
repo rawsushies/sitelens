@@ -22,21 +22,62 @@ export class BoundedLRUCache<V = any> {
   }
 
   /**
-   * Generates a stable key for a provider and its query parameters
+   * Recursively normalizes an arbitrary value for stable, deterministic cache serialization
    */
-  public static generateKey(providerId: string, params: Record<string, any>): string {
-    const sortedKeys = Object.keys(params).sort();
-    const normalized: Record<string, any> = {};
-    for (const k of sortedKeys) {
-      const val = params[k];
-      if (typeof val === 'number') {
-        // Round floats to 4 decimal places (~11m precision) to optimize cache hits for nearby queries
-        normalized[k] = Number(val.toFixed(4));
-      } else {
-        normalized[k] = val;
+  private static canonicalize(val: any): any {
+    if (val === null || val === undefined) return null;
+    if (typeof val === 'number') {
+      // Float precision: round to 5 decimal places (~1.1m precision) for geographic coordinates
+      return Number(val.toFixed(5));
+    }
+    if (typeof val === 'boolean' || typeof val === 'string') {
+      return val;
+    }
+    if (Array.isArray(val)) {
+      return val.map(item => BoundedLRUCache.canonicalize(item));
+    }
+    if (typeof val === 'object') {
+      const sortedKeys = Object.keys(val).sort();
+      const result: Record<string, any> = {};
+      for (const k of sortedKeys) {
+        // Exclude transient execution parameters
+        if (k === 'signal' || k === 'bypassCache' || k === 'timeoutMs') continue;
+        result[k] = BoundedLRUCache.canonicalize(val[k]);
+      }
+      return result;
+    }
+    return String(val);
+  }
+
+  /**
+   * Generates a collision-resistant, deterministic key for a provider, query parameters, and result-affecting options
+   */
+  public static generateKey(
+    providerId: string, 
+    params: Record<string, any>, 
+    options?: Record<string, any>
+  ): string {
+    const combined: Record<string, any> = {
+      query: BoundedLRUCache.canonicalize(params)
+    };
+
+    if (options) {
+      const normalizedOpts: Record<string, any> = {};
+      if (options.siteBoundary && Array.isArray(options.siteBoundary)) {
+        normalizedOpts.siteBoundary = BoundedLRUCache.canonicalize(options.siteBoundary);
+      }
+      if (options.bbox && Array.isArray(options.bbox)) {
+        normalizedOpts.bbox = BoundedLRUCache.canonicalize(options.bbox);
+      }
+      if (typeof options.radiusMeters === 'number') {
+        normalizedOpts.radiusMeters = Number(options.radiusMeters.toFixed(1));
+      }
+      if (Object.keys(normalizedOpts).length > 0) {
+        combined.options = normalizedOpts;
       }
     }
-    return `${providerId}:${JSON.stringify(normalized)}`;
+
+    return `${providerId}:${JSON.stringify(combined)}`;
   }
 
   /**

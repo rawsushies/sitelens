@@ -1,7 +1,7 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * SiteLens Geospatial Site Intelligence Workstation - OpenStreetMap Overpass Provider (M2.0)
+ * SiteLens Geospatial Site Intelligence Workstation - OpenStreetMap Overpass Provider (M2.0.1)
  */
 
 import { IDataProvider, SpatialDataset, SpatialQueryOptions, DatasetMetadata, DatasetStatus } from '../types';
@@ -21,6 +21,12 @@ export interface OSMUrbanSummaryData {
   roadCount: number;
   amenityCount: number;
   landuseCount: number;
+  queriedTotals: {
+    buildings: number;
+    roads: number;
+    amenities: number;
+    landuse: number;
+  };
   features: Feature[];
   elementsSummary: {
     category: string;
@@ -28,6 +34,11 @@ export interface OSMUrbanSummaryData {
     type?: string;
     osmId: number;
   }[];
+  diagnostics: {
+    incompleteGeometriesCount: number;
+    relationsProcessed: number;
+    deduplicatedWaysCount: number;
+  };
 }
 
 const OSM_METADATA: DatasetMetadata = {
@@ -65,20 +76,36 @@ const OVERPASS_ENDPOINTS = [
   'https://overpass.kumi.systems/api/interpreter'
 ];
 
+/**
+ * Assembles closed rings from Overpass relation member ways
+ */
+function assembleRingsFromMembers(members: any[], role: 'outer' | 'inner'): [number, number][][] {
+  const filtered = members.filter(m => m.role === role && Array.isArray(m.geometry) && m.geometry.length >= 2);
+  const rings: [number, number][][] = [];
+
+  for (const item of filtered) {
+    const coords: [number, number][] = item.geometry.map((pt: any) => [pt.lon, pt.lat]);
+    if (coords.length >= 3) {
+      if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+        coords.push([...coords[0]]);
+      }
+      rings.push(coords);
+    }
+  }
+
+  return rings;
+}
+
 export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryData> {
   readonly id = 'osm-overpass';
   readonly name = 'OpenStreetMap Overpass Provider';
   readonly defaultMetadata = OSM_METADATA;
 
-  /**
-   * Fetches real vector geometry and attributes from OpenStreetMap Overpass
-   */
   async fetch(query: OSMQuery, options: SpatialQueryOptions = {}): Promise<SpatialDataset<OSMUrbanSummaryData>> {
     const radius = Math.min(Math.max(query.radiusMeters || 350, 50), 1500);
     const lat = query.latitude;
     const lng = query.longitude;
 
-    // Overpass query with body and geometry
     const overpassQL = `
       [out:json][timeout:18];
       (
@@ -96,13 +123,14 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
     let rawData: any = null;
     let endpointUsed = OVERPASS_ENDPOINTS[0];
 
-    // Try primary and fallback endpoints
+    // Try primary and fallback endpoints with user agent header and rate limit awareness
     for (const endpoint of OVERPASS_ENDPOINTS) {
       endpointUsed = endpoint;
       const res = await resilientFetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'SiteLens-Geospatial-Workstation/2.0 (OpenStreetMap ODbL Consumer)'
         },
         body: `data=${encodeURIComponent(overpassQL)}`,
         timeoutMs: options.timeoutMs || 15000,
@@ -141,7 +169,11 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
     }
 
     const elements: any[] = rawData.elements || [];
-    const isTruncated = Boolean(rawData.remark && rawData.remark.includes('timed out'));
+    const remark: string = rawData.remark || '';
+    const isTruncated = remark.includes('timed out') || 
+                        remark.includes('out of memory') || 
+                        remark.includes('quota') ||
+                        elements.length >= 150;
 
     if (elements.length === 0) {
       return {
@@ -154,8 +186,10 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
           roadCount: 0,
           amenityCount: 0,
           landuseCount: 0,
+          queriedTotals: { buildings: 0, roads: 0, amenities: 0, landuse: 0 },
           features: [],
-          elementsSummary: []
+          elementsSummary: [],
+          diagnostics: { incompleteGeometriesCount: 0, relationsProcessed: 0, deduplicatedWaysCount: 0 }
         },
         featureCollection: {
           type: 'FeatureCollection',
@@ -169,21 +203,117 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
       };
     }
 
-    // Assemble real GeoJSON Features from Overpass elements with geometry
-    const rawFeatures: Feature[] = [];
-    let buildingCount = 0;
-    let roadCount = 0;
-    let amenityCount = 0;
-    let landuseCount = 0;
-    const summaryItems: OSMUrbanSummaryData['elementsSummary'] = [];
+    // Pass 1: Collect relation member way IDs to deduplicate features
+    const relationMemberWayIds = new Set<number>();
+    const relations = elements.filter(el => el.type === 'relation');
+    for (const rel of relations) {
+      if (Array.isArray(rel.members)) {
+        for (const m of rel.members) {
+          if (m.type === 'way' && m.ref) {
+            relationMemberWayIds.add(m.ref);
+          }
+        }
+      }
+    }
 
+    const rawFeatures: Feature[] = [];
+    const summaryItems: OSMUrbanSummaryData['elementsSummary'] = [];
+    let incompleteCount = 0;
+    let relationsProcessed = 0;
+    let deduplicatedWaysCount = 0;
+
+    let rawBuildingCount = 0;
+    let rawRoadCount = 0;
+    let rawAmenityCount = 0;
+    let rawLanduseCount = 0;
+
+    // Pass 2: Process relations (Multipolygon buildings with holes)
+    for (const rel of relations) {
+      const tags = rel.tags || {};
+      const name = tags.name || tags['addr:housename'] || null;
+
+      if (tags.building || tags.type === 'multipolygon') {
+        rawBuildingCount++;
+        relationsProcessed++;
+
+        const outerRings = assembleRingsFromMembers(rel.members || [], 'outer');
+        const innerRings = assembleRingsFromMembers(rel.members || [], 'inner');
+
+        if (outerRings.length === 1) {
+          // Single outer polygon with 0 or more inner holes
+          const polyCoords = [outerRings[0], ...innerRings];
+          rawFeatures.push({
+            type: 'Feature',
+            id: `osm-relation-${rel.id}`,
+            geometry: {
+              type: 'Polygon',
+              coordinates: polyCoords
+            },
+            properties: {
+              osmId: rel.id,
+              osmType: 'relation',
+              featureType: 'building',
+              isMultipolygon: true,
+              holeCount: innerRings.length,
+              name: name || `Building Complex #${rel.id}`,
+              buildingType: tags.building !== 'yes' ? (tags.building || 'multipolygon') : 'complex',
+              height: tags.height ? parseFloat(tags.height) : undefined,
+              levels: tags['building:levels'] ? parseInt(tags['building:levels'], 10) : undefined,
+              tags
+            }
+          });
+        } else if (outerRings.length > 1) {
+          // Multiple outer polygons -> MultiPolygon
+          const multiPolyCoords = outerRings.map(outer => [outer]);
+          rawFeatures.push({
+            type: 'Feature',
+            id: `osm-relation-${rel.id}`,
+            geometry: {
+              type: 'MultiPolygon',
+              coordinates: multiPolyCoords
+            },
+            properties: {
+              osmId: rel.id,
+              osmType: 'relation',
+              featureType: 'building',
+              isMultipolygon: true,
+              outerCount: outerRings.length,
+              name: name || `Building Multi-Complex #${rel.id}`,
+              buildingType: tags.building || 'multipolygon',
+              tags
+            }
+          });
+        } else {
+          incompleteCount++;
+        }
+
+        if (summaryItems.length < 50) {
+          summaryItems.push({
+            category: 'building',
+            name: name || `Building Complex (#${rel.id})`,
+            type: tags.building || 'multipolygon',
+            osmId: rel.id
+          });
+        }
+      }
+    }
+
+    // Pass 3: Process ways and nodes (deduplicating member ways already absorbed into relations)
     for (const el of elements) {
+      if (el.type === 'relation') continue; // already processed in Pass 2
+
       const tags = el.tags || {};
       const name = tags.name || tags['addr:housename'] || tags['addr:street'] ? `${tags.name || ''} ${tags['addr:housenumber'] || ''}`.trim() : null;
 
       if (tags.building) {
-        buildingCount++;
-        // Assemble polygon from way geometry
+        // Feature deduplication: avoid adding way if already represented by parent relation
+        if (relationMemberWayIds.has(el.id)) {
+          deduplicatedWaysCount++;
+          continue;
+        }
+
+        rawBuildingCount++;
+
         if (el.type === 'way' && Array.isArray(el.geometry) && el.geometry.length >= 3) {
           const ring: [number, number][] = el.geometry.map((pt: any) => [pt.lon, pt.lat]);
           // Enforce ring closure
@@ -209,6 +339,8 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
               tags
             }
           });
+        } else {
+          incompleteCount++;
         }
 
         if (summaryItems.length < 50) {
@@ -220,7 +352,8 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
           });
         }
       } else if (tags.highway) {
-        roadCount++;
+        rawRoadCount++;
+
         if (el.type === 'way' && Array.isArray(el.geometry) && el.geometry.length >= 2) {
           const coords: [number, number][] = el.geometry.map((pt: any) => [pt.lon, pt.lat]);
           rawFeatures.push({
@@ -240,6 +373,8 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
               tags
             }
           });
+        } else {
+          incompleteCount++;
         }
 
         if (summaryItems.length < 50) {
@@ -251,12 +386,12 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
           });
         }
       } else if (tags.amenity) {
-        amenityCount++;
+        rawAmenityCount++;
+
         let geom: Geometry | null = null;
         if (el.type === 'node' && el.lat !== undefined && el.lon !== undefined) {
           geom = { type: 'Point', coordinates: [el.lon, el.lat] };
         } else if (el.type === 'way' && Array.isArray(el.geometry) && el.geometry.length > 0) {
-          // Centroid approximation from vertices
           const avgLng = el.geometry.reduce((s: number, p: any) => s + p.lon, 0) / el.geometry.length;
           const avgLat = el.geometry.reduce((s: number, p: any) => s + p.lat, 0) / el.geometry.length;
           geom = { type: 'Point', coordinates: [avgLng, avgLat] };
@@ -276,6 +411,8 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
               tags
             }
           });
+        } else {
+          incompleteCount++;
         }
 
         if (summaryItems.length < 50) {
@@ -287,7 +424,7 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
           });
         }
       } else if (tags.leisure || tags.landuse) {
-        landuseCount++;
+        rawLanduseCount++;
       }
     }
 
@@ -295,6 +432,17 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
     const filteredFeatures = options.siteBoundary
       ? filterFeaturesBySiteBoundary(rawFeatures, options.siteBoundary)
       : rawFeatures;
+
+    // Feature and count consistency:
+    // If filtered by site boundary, count the retained features directly
+    const retainedBuildings = filteredFeatures.filter(f => f.properties?.featureType === 'building').length;
+    const retainedRoads = filteredFeatures.filter(f => f.properties?.featureType === 'road').length;
+    const retainedAmenities = filteredFeatures.filter(f => f.properties?.featureType === 'amenity').length;
+
+    const buildingCount = options.siteBoundary ? retainedBuildings : rawBuildingCount;
+    const roadCount = options.siteBoundary ? retainedRoads : rawRoadCount;
+    const amenityCount = options.siteBoundary ? retainedAmenities : rawAmenityCount;
+    const landuseCount = rawLanduseCount;
 
     const status: DatasetStatus = isTruncated 
       ? 'partial' 
@@ -304,14 +452,30 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
       id: `osm-${lat.toFixed(4)}-${lng.toFixed(4)}`,
       providerId: this.id,
       status,
-      metadata,
+      metadata: {
+        ...metadata,
+        limitations: isTruncated 
+          ? 'PARTIAL COVERAGE: Overpass response was truncated by server limits. Some elements in the buffer may be missing.' 
+          : metadata.limitations
+      },
       data: {
         buildingCount,
         roadCount,
         amenityCount,
         landuseCount,
+        queriedTotals: {
+          buildings: rawBuildingCount,
+          roads: rawRoadCount,
+          amenities: rawAmenityCount,
+          landuse: rawLanduseCount
+        },
         features: filteredFeatures,
-        elementsSummary: summaryItems
+        elementsSummary: summaryItems,
+        diagnostics: {
+          incompleteGeometriesCount: incompleteCount,
+          relationsProcessed,
+          deduplicatedWaysCount
+        }
       },
       featureCollection: {
         type: 'FeatureCollection',
