@@ -1,0 +1,6 @@
+{
+  "name": "SiteLens - Geospatial Site Intelligence",
+  "description": "Professional geospatial site intelligence workstation for architects, BIM professionals, urban planners, and environmental designers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
