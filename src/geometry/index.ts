@@ -444,3 +444,28 @@ export function analyzePolygon(ringCoordinates: [number, number][]): PolygonAnal
     metrics,
   };
 }
+
+/**
+ * Robustly deletes a vertex from a closed polygon ring while preserving ring closure (P0 = Pend)
+ * Returns null if the polygon would have fewer than 3 unique vertices.
+ */
+export function deleteVertexFromRing(ring: [number, number][], index: number): [number, number][] | null {
+  if (ring.length <= 4) return null; // Needs >= 4 vertices (3 unique + 1 closing) to remain a polygon
+
+  const uniquePoints = ring.slice(0, ring.length - 1);
+  const targetIndex = (index >= uniquePoints.length || index < 0) ? 0 : index;
+  uniquePoints.splice(targetIndex, 1);
+  if (uniquePoints.length < 3) return null;
+
+  return [...uniquePoints, uniquePoints[0]];
+}
+
+/**
+ * Inserts a vertex into a closed polygon ring between index and index+1 while preserving ring closure
+ */
+export function insertVertexIntoRing(ring: [number, number][], insertIndex: number, point: [number, number]): [number, number][] {
+  const uniquePoints = ring.slice(0, ring.length - 1);
+  const idx = Math.max(0, Math.min(insertIndex, uniquePoints.length - 1));
+  uniquePoints.splice(idx + 1, 0, point);
+  return [...uniquePoints, uniquePoints[0]];
+}

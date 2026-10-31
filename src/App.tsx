@@ -96,6 +96,15 @@ export default function App() {
     init();
   }, []);
 
+  // Debounced auto-save hook: guarantees changes survive browser refresh even without explicit Save click
+  useEffect(() => {
+    if (!project || !project.id) return;
+    const timer = setTimeout(() => {
+      saveProject(project).catch(err => console.warn('Auto-save warning:', err));
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [project.features, project.name, project.activeFeatureId, project.center, project.zoom]);
+
   // Compute active feature analyses
   const activeFeature = project.features.find(f => f.id === project.activeFeatureId) || null;
 

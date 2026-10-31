@@ -300,3 +300,42 @@ describe('History Engine No-Op Prevention & Deep Immutability', () => {
     expect(restored?.features[0].geometry.coordinates[0][0]).toEqual([0, 0]);
   });
 });
+
+describe('Project Persistence & Storage Reload Integration', () => {
+  it('correctly saves and loads project across simulated browser storage', async () => {
+    // Mock localStorage in test environment
+    const storageMock: Record<string, string> = {};
+    const originalLocalStorage = globalThis.localStorage;
+    globalThis.localStorage = {
+      getItem: (key: string) => storageMock[key] ?? null,
+      setItem: (key: string, value: string) => { storageMock[key] = value; },
+      removeItem: (key: string) => { delete storageMock[key]; },
+      clear: () => { Object.keys(storageMock).forEach(k => delete storageMock[k]); },
+      key: (i: number) => Object.keys(storageMock)[i] ?? null,
+      length: 0
+    } as any;
+
+    try {
+      const { saveProject, loadAllProjects } = await import('../projects');
+      const testProject = createDefaultProject();
+      testProject.name = 'Persistence Test Project Alpha';
+
+      // Save project
+      await saveProject(testProject);
+
+      // Verify localStorage fallback mirror contains the saved project
+      expect(storageMock['sitelens_projects_backup']).toBeDefined();
+      const backupProjects = JSON.parse(storageMock['sitelens_projects_backup']);
+      expect(backupProjects.length).toBeGreaterThan(0);
+      expect(backupProjects[0].name).toBe('Persistence Test Project Alpha');
+
+      // Reload all projects
+      const loaded = await loadAllProjects();
+      expect(loaded.length).toBeGreaterThan(0);
+      expect(loaded.some(p => p.name === 'Persistence Test Project Alpha')).toBe(true);
+    } finally {
+      globalThis.localStorage = originalLocalStorage;
+    }
+  });
+});
+

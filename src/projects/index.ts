@@ -16,6 +16,9 @@ const ACTIVE_PROJECT_KEY = 'sitelens_active_project_id';
  */
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      return reject(new Error('IndexedDB is not supported in this environment'));
+    }
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onupgradeneeded = (event: any) => {
@@ -87,31 +90,62 @@ export function createDefaultProject(): SiteProject {
 export async function loadAllProjects(): Promise<SiteProject[]> {
   try {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    const idbProjects = await new Promise<SiteProject[]>((resolve, reject) => {
       const tx = db.transaction(STORE_PROJECTS, 'readonly');
       const store = tx.objectStore(STORE_PROJECTS);
       const req = store.getAll();
 
-      req.onsuccess = () => {
-        const projects: SiteProject[] = req.result || [];
-        resolve(projects);
-      };
+      req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(req.error);
     });
+
+    if (idbProjects && idbProjects.length > 0) {
+      return idbProjects;
+    }
   } catch (err) {
-    console.error('IndexedDB loadAllProjects error:', err);
-    return [];
+    console.warn('IndexedDB loadAllProjects error, checking fallback:', err);
   }
+
+  // Resilient fallback to localStorage backup
+  try {
+    const raw = localStorage.getItem('sitelens_projects_backup');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (lsErr) {
+    console.error('localStorage fallback load error:', lsErr);
+  }
+
+  return [];
 }
 
 /**
- * Saves or updates a project in IndexedDB
+ * Saves or updates a project in IndexedDB and localStorage mirror
  */
 export async function saveProject(project: SiteProject): Promise<void> {
   const updatedProject: SiteProject = {
     ...project,
     updatedAt: new Date().toISOString(),
   };
+
+  // Always mirror to localStorage as resilient fallback
+  try {
+    const raw = localStorage.getItem('sitelens_projects_backup');
+    const backupList: SiteProject[] = raw ? JSON.parse(raw) : [];
+    const idx = backupList.findIndex(p => p.id === updatedProject.id);
+    if (idx >= 0) {
+      backupList[idx] = updatedProject;
+    } else {
+      backupList.push(updatedProject);
+    }
+    localStorage.setItem('sitelens_projects_backup', JSON.stringify(backupList));
+    localStorage.setItem(ACTIVE_PROJECT_KEY, updatedProject.id);
+  } catch (lsErr) {
+    console.warn('localStorage backup warning:', lsErr);
+  }
 
   try {
     const db = await openDB();
@@ -120,21 +154,33 @@ export async function saveProject(project: SiteProject): Promise<void> {
       const store = tx.objectStore(STORE_PROJECTS);
       const req = store.put(updatedProject);
 
-      req.onsuccess = () => {
-        localStorage.setItem(ACTIVE_PROJECT_KEY, updatedProject.id);
-        resolve();
-      };
+      req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });
   } catch (err) {
-    console.error('IndexedDB saveProject error:', err);
+    console.warn('IndexedDB saveProject error (persisted via localStorage fallback):', err);
   }
 }
 
 /**
- * Deletes a project from IndexedDB
+ * Deletes a project from IndexedDB and localStorage mirror
  */
 export async function deleteProject(projectId: string): Promise<void> {
+  // Update localStorage mirror
+  try {
+    const raw = localStorage.getItem('sitelens_projects_backup');
+    if (raw) {
+      const backupList: SiteProject[] = JSON.parse(raw);
+      const filtered = backupList.filter(p => p.id !== projectId);
+      localStorage.setItem('sitelens_projects_backup', JSON.stringify(filtered));
+    }
+    if (localStorage.getItem(ACTIVE_PROJECT_KEY) === projectId) {
+      localStorage.removeItem(ACTIVE_PROJECT_KEY);
+    }
+  } catch (lsErr) {
+    console.warn('localStorage delete warning:', lsErr);
+  }
+
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {

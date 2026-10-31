@@ -11,7 +11,7 @@ import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { SiteProject, SiteFeature, BasemapId } from '../types';
 import { ToolMode } from './ToolBar';
 import { BASEMAP_OPTIONS } from '../map/basemaps';
-import { calculateGeodesicDistance } from '../geometry';
+import { calculateGeodesicDistance, deleteVertexFromRing, insertVertexIntoRing } from '../geometry';
 import { Compass, AlertTriangle, Check, X } from 'lucide-react';
 
 // Setup MapLibre web worker reliably
@@ -373,13 +373,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     stateRef.current.onStartGeometryTransaction?.();
 
     if (activeFeature.geometry.type === 'Polygon') {
-      const ring = [...activeFeature.geometry.coordinates[0]];
-      // Ring has (n + 1) points; must have >= 4 points before delete to remain a valid triangle
-      if (ring.length <= 4) return;
-      ring.splice(index, 1);
-      // Maintain ring closure
-      ring[ring.length - 1] = ring[0];
-      stateRef.current.onUpdateFeatureGeometry(activeFeature.id, [ring], false);
+      const ring = activeFeature.geometry.coordinates[0];
+      const newRing = deleteVertexFromRing(ring, index);
+      if (!newRing) return;
+      stateRef.current.onUpdateFeatureGeometry(activeFeature.id, [newRing], false);
     } else if (activeFeature.geometry.type === 'LineString') {
       const coords = [...activeFeature.geometry.coordinates];
       if (coords.length <= 2) return;
@@ -394,11 +391,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     stateRef.current.onStartGeometryTransaction?.();
 
     if (activeFeature.geometry.type === 'Polygon') {
-      const ring = [...activeFeature.geometry.coordinates[0]];
-      ring.splice(insertIndex + 1, 0, midpoint);
-      // Maintain ring closure
-      ring[ring.length - 1] = ring[0];
-      stateRef.current.onUpdateFeatureGeometry(activeFeature.id, [ring], false);
+      const ring = activeFeature.geometry.coordinates[0];
+      const newRing = insertVertexIntoRing(ring, insertIndex, midpoint);
+      stateRef.current.onUpdateFeatureGeometry(activeFeature.id, [newRing], false);
     } else if (activeFeature.geometry.type === 'LineString') {
       const coords = [...activeFeature.geometry.coordinates];
       coords.splice(insertIndex + 1, 0, midpoint);
