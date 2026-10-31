@@ -26,6 +26,7 @@ import {
   exportToCSV,
   downloadFile
 } from './projects';
+import { HistoryManager } from './projects/history';
 import { analyzePolygon, analyzeLine } from './geometry';
 import { inspectCoordinates } from './coordinates';
 import { calculateSolarAnalysis } from './solar';
@@ -52,9 +53,14 @@ export default function App() {
   const [flyToTarget, setFlyToTarget] = useState<{ lng: number; lat: number; zoom?: number } | null>(null);
   const [fitBoundsTrigger, setFitBoundsTrigger] = useState(0);
 
-  // Undo / Redo History
-  const [history, setHistory] = useState<SiteFeature[][]>([]);
-  const [redoStack, setRedoStack] = useState<SiteFeature[][]>([]);
+  // Drawing coordination triggers for consolidated keyboard actions
+  const [completeDrawingTrigger, setCompleteDrawingTrigger] = useState(0);
+  const [cancelDrawingTrigger, setCancelDrawingTrigger] = useState(0);
+  const [isDrawingActive, setIsDrawingActive] = useState(false);
+
+  // Robust immutable History Manager
+  const historyManagerRef = useRef<HistoryManager>(new HistoryManager(30));
+  const [historyVersion, setHistoryVersion] = useState(0);
 
   // Analytical Context States
   const [solarAnalysis, setSolarAnalysis] = useState<SolarAnalysis | null>(null);
@@ -62,6 +68,10 @@ export default function App() {
   const [urbanContext, setUrbanContext] = useState<UrbanContextSummary | null>(null);
   const [isLoadingClimate, setIsLoadingClimate] = useState(false);
   const [isLoadingUrban, setIsLoadingUrban] = useState(false);
+
+  // Synchronous ref for project to guarantee no stale closures in event callbacks
+  const projectRef = useRef(project);
+  projectRef.current = project;
 
   // Initialize projects from IndexedDB on startup
   useEffect(() => {
@@ -120,7 +130,6 @@ export default function App() {
     : project.center;
 
   useEffect(() => {
-    // 1. Solar Astronomical calculation (instantaneous local calculation)
     const solar = calculateSolarAnalysis(targetLocation[1], targetLocation[0], new Date());
     setSolarAnalysis(solar);
   }, [targetLocation[0], targetLocation[1]]);
@@ -160,8 +169,8 @@ export default function App() {
   const handleSaveProject = async () => {
     setIsSaving(true);
     try {
-      // Re-attach latest metrics into features
-      const updatedFeatures = project.features.map(f => {
+      const curProj = projectRef.current;
+      const updatedFeatures = curProj.features.map(f => {
         if (f.id === activeFeature?.id && polygonAnalysis) {
           return {
             ...f,
@@ -185,7 +194,7 @@ export default function App() {
       });
 
       const updatedProject: SiteProject = {
-        ...project,
+        ...curProj,
         features: updatedFeatures,
         updatedAt: new Date().toISOString()
       };
@@ -198,29 +207,57 @@ export default function App() {
     }
   };
 
-  const pushHistory = (currentFeatures: SiteFeature[]) => {
-    setHistory(prev => [...prev.slice(-25), currentFeatures]);
-    setRedoStack([]);
-  };
+  // Geometry Transaction & Undo/Redo Engine
+  const handleStartGeometryTransaction = useCallback(() => {
+    const curProj = projectRef.current;
+    const pushed = historyManagerRef.current.push({
+      features: curProj.features,
+      activeFeatureId: curProj.activeFeatureId,
+    });
+    if (pushed) {
+      setHistoryVersion(v => v + 1);
+    }
+  }, []);
 
-  const handleUndo = () => {
-    if (history.length === 0) return;
-    const previous = history[history.length - 1];
-    setHistory(prev => prev.slice(0, prev.length - 1));
-    setRedoStack(prev => [project.features, ...prev]);
-    setProject(prev => ({ ...prev, features: previous }));
-  };
+  const handleUndo = useCallback(() => {
+    const curProj = projectRef.current;
+    const restored = historyManagerRef.current.undo({
+      features: curProj.features,
+      activeFeatureId: curProj.activeFeatureId,
+    });
+    if (restored) {
+      setProject(prev => ({
+        ...prev,
+        features: restored.features,
+        activeFeatureId: restored.activeFeatureId,
+      }));
+      setHistoryVersion(v => v + 1);
+    }
+  }, []);
 
-  const handleRedo = () => {
-    if (redoStack.length === 0) return;
-    const next = redoStack[0];
-    setRedoStack(prev => prev.slice(1));
-    setHistory(prev => [...prev, project.features]);
-    setProject(prev => ({ ...prev, features: next }));
-  };
+  const handleRedo = useCallback(() => {
+    const curProj = projectRef.current;
+    const restored = historyManagerRef.current.redo({
+      features: curProj.features,
+      activeFeatureId: curProj.activeFeatureId,
+    });
+    if (restored) {
+      setProject(prev => ({
+        ...prev,
+        features: restored.features,
+        activeFeatureId: restored.activeFeatureId,
+      }));
+      setHistoryVersion(v => v + 1);
+    }
+  }, []);
 
-  const handleCreateFeature = (newFeature: SiteFeature) => {
-    pushHistory(project.features);
+  const handleCreateFeature = useCallback((newFeature: SiteFeature) => {
+    const curProj = projectRef.current;
+    historyManagerRef.current.push({
+      features: curProj.features,
+      activeFeatureId: curProj.activeFeatureId,
+    });
+
     let metrics: any = {};
     if (newFeature.geometry.type === 'Polygon') {
       try {
@@ -248,16 +285,19 @@ export default function App() {
       activeFeatureId: newFeature.id
     }));
     setCurrentTool('select');
-  };
+    setHistoryVersion(v => v + 1);
+  }, []);
 
-  const handleStartGeometryTransaction = () => {
-    pushHistory(project.features);
-  };
-
-  const handleUpdateFeatureGeometry = (featureId: string, newCoordinates: any, recordHistory = true) => {
+  const handleUpdateFeatureGeometry = useCallback((featureId: string, newCoordinates: any, recordHistory = true) => {
     if (recordHistory) {
-      pushHistory(project.features);
+      const curProj = projectRef.current;
+      const pushed = historyManagerRef.current.push({
+        features: curProj.features,
+        activeFeatureId: curProj.activeFeatureId,
+      });
+      if (pushed) setHistoryVersion(v => v + 1);
     }
+
     setProject(prev => ({
       ...prev,
       features: prev.features.map(f => {
@@ -283,16 +323,22 @@ export default function App() {
         return f;
       })
     }));
-  };
+  }, []);
 
-  const handleDeleteFeature = (featureId: string) => {
-    pushHistory(project.features);
+  const handleDeleteFeature = useCallback((featureId: string) => {
+    const curProj = projectRef.current;
+    historyManagerRef.current.push({
+      features: curProj.features,
+      activeFeatureId: curProj.activeFeatureId,
+    });
+
     setProject(prev => ({
       ...prev,
       features: prev.features.filter(f => f.id !== featureId),
       activeFeatureId: prev.activeFeatureId === featureId ? null : prev.activeFeatureId
     }));
-  };
+    setHistoryVersion(v => v + 1);
+  }, []);
 
   const handleUpdateFeatureName = (featureId: string, name: string) => {
     setProject(prev => ({
@@ -312,10 +358,10 @@ export default function App() {
     setProject(prev => ({ ...prev, center: [lng, lat], zoom }));
   };
 
-  // Global hotkeys
+  // Authoritative Consolidated Keyboard Handler (Single Source of Truth)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger hotkeys if inside input, textarea, select or contentEditable
+      // Guard against typing in input, textarea, select or contentEditable elements
       const target = e.target as HTMLElement | null;
       if (
         target &&
@@ -324,28 +370,58 @@ export default function App() {
         return;
       }
 
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
-        if (e.shiftKey) {
-          handleRedo();
-        } else {
-          handleUndo();
-        }
+      // Undo: Ctrl+Z / Cmd+Z (without Shift)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) {
         e.preventDefault();
-      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
+        handleUndo();
+        return;
+      }
+
+      // Redo: Ctrl+Y / Cmd+Y OR Ctrl+Shift+Z / Cmd+Shift+Z
+      if (
+        ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) ||
+        ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && e.shiftKey)
+      ) {
+        e.preventDefault();
         handleRedo();
-        e.preventDefault();
-      } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (project.activeFeatureId) {
-          handleDeleteFeature(project.activeFeatureId);
+        return;
+      }
+
+      // Delete Active Feature: Delete or Backspace
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const curActiveId = projectRef.current.activeFeatureId;
+        if (curActiveId) {
+          e.preventDefault();
+          handleDeleteFeature(curActiveId);
         }
-      } else if (e.key === 'Escape') {
-        if (project.activeFeatureId) {
-          setProject(p => ({ ...p, activeFeatureId: null }));
+        return;
+      }
+
+      // Escape: Cancel in-progress drawing OR deselect / return to Select tool
+      if (e.key === 'Escape') {
+        if (isDrawingActive) {
+          setCancelDrawingTrigger(t => t + 1);
+        } else {
+          if (projectRef.current.activeFeatureId) {
+            setProject(p => ({ ...p, activeFeatureId: null }));
+          }
+          if (currentTool !== 'select') {
+            setCurrentTool('select');
+          }
         }
-        if (currentTool !== 'select') {
-          setCurrentTool('select');
+        return;
+      }
+
+      // Enter: Complete in-progress drawing
+      if (e.key === 'Enter') {
+        if (isDrawingActive) {
+          setCompleteDrawingTrigger(t => t + 1);
         }
-      } else if (e.key === 'v' || e.key === 'V') {
+        return;
+      }
+
+      // Tool selection shortcuts
+      if (e.key === 'v' || e.key === 'V') {
         setCurrentTool('select');
       } else if (e.key === 'h' || e.key === 'H') {
         setCurrentTool('pan');
@@ -362,7 +438,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [project.activeFeatureId, currentTool, history, redoStack]);
+  }, [currentTool, isDrawingActive, handleUndo, handleRedo, handleDeleteFeature]);
 
   // Aggregate comprehensive dossier
   const dossier = generateSiteIntelligenceReport(
@@ -400,8 +476,8 @@ export default function App() {
         <ToolBar
           currentTool={currentTool}
           onSelectTool={setCurrentTool}
-          canUndo={history.length > 0}
-          canRedo={redoStack.length > 0}
+          canUndo={historyManagerRef.current.canUndo()}
+          canRedo={historyManagerRef.current.canRedo()}
           onUndo={handleUndo}
           onRedo={handleRedo}
           hasSelectedFeature={!!project.activeFeatureId}
@@ -424,6 +500,9 @@ export default function App() {
           onCursorMove={(lng, lat) => setCursorCoords([lng, lat])}
           flyToTarget={flyToTarget}
           fitBoundsTrigger={fitBoundsTrigger}
+          completeTrigger={completeDrawingTrigger}
+          cancelTrigger={cancelDrawingTrigger}
+          onDrawingActiveChange={setIsDrawingActive}
         />
 
         <InspectorPanel
@@ -460,7 +539,11 @@ export default function App() {
         currentProjectId={project.id}
         onSelectProject={(id) => {
           const found = projects.find(p => p.id === id);
-          if (found) setProject(found);
+          if (found) {
+            setProject(found);
+            historyManagerRef.current.clear();
+            setHistoryVersion(v => v + 1);
+          }
         }}
         onCreateProject={async (name, description) => {
           const newProj: SiteProject = {
@@ -481,6 +564,8 @@ export default function App() {
           await saveProject(newProj);
           setProjects(prev => [...prev, newProj]);
           setProject(newProj);
+          historyManagerRef.current.clear();
+          setHistoryVersion(v => v + 1);
           setIsProjectModalOpen(false);
         }}
         onDeleteProject={async (id) => {
@@ -489,6 +574,8 @@ export default function App() {
           setProjects(remaining);
           if (project.id === id && remaining.length > 0) {
             setProject(remaining[0]);
+            historyManagerRef.current.clear();
+            setHistoryVersion(v => v + 1);
           }
         }}
       />

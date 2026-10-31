@@ -123,20 +123,18 @@ src/
 
 ---
 
-## 🧪 Unit & Regression Tests
+## 🧪 Unit & Acceptance Tests
 
-SiteLens includes 15 automated unit and regression tests running in **Vitest**:
-- **Sequential Polygon & Polyline Creation**: Verifies multiple distinct polygons and lines can be created sequentially without overwriting or state corruption.
-- **Tool Switching**: Clean cancellation of incomplete drawings without corrupting existing features.
-- **Selection & Deselection**: Direct selection, canvas deselect, and feature switching.
-- **Vertex Manipulation**: Dragging vertices dynamically updates WGS84 ellipsoidal area, perimeter, and preserves ring closure.
-- **Midpoint Insertion**: Dynamically adds nodes to polygon rings and polylines with immediate measurement updates.
-- **Vertex Deletion**: Removes nodes while preserving valid closed simple polygons.
-- **Undo/Redo Transactions**: Verifies full multi-step history transactions for creations, moves, insertions, and deletions.
-- **Geodesic Distance & Area**: Charles Karney WGS84 geodesic algorithms validated against ellipsoidal baselines.
-- **Topology Integrity**: Detection of bowtie self-intersecting polygons.
-- **Coordinate Reference Systems**: Sexagesimal DMS conversions, global UTM zone calculations, and Proj4 transformations.
-- **Astronomical Solar Model**: Jean Meeus celestial algorithms for solar altitude, azimuth, and day length.
+SiteLens includes 18 automated unit, lifecycle, and acceptance tests running in **Vitest**:
+- **Official Acceptance Test Sequence (`src/geometry/acceptance.test.ts`)**:
+  - Load existing project -> Create Polygon A -> Create Polygon B -> Create Polyline C -> Delete Polygon A -> Undo deletion -> Move vertex in Polygon B -> Undo -> Redo -> Save and reload via GeoJSON.
+  - Verifies that every feature and its geometry remain correct throughout.
+- **History Engine No-Op Prevention**: Verifies that identical states are discarded so no-ops do not pollute undo history.
+- **History Deep Immutability**: Verifies snapshots are deep-cloned so live in-memory mutations never corrupt historical states.
+- **Stale Closure Prevention**: Synchronous `stateRef` pattern in `MapCanvas` guarantees MapLibre event listeners always access current React props and state without recreating the map instance.
+- **Consolidated Keyboard Coordination**: Single authoritative keyboard handler in `App.tsx` coordinating tool switches, input guarding, `Escape` cancellation, `Enter` completions, and `Ctrl+Z` / `Ctrl+Y` undo/redo.
+- **WGS84 Ellipsoidal Integrals & Geodesics**: Charles Karney exact geodesic polygon and distance calculations.
+- **Astronomical Solar Mechanics**: Jean Meeus celestial algorithms for solar elevation, azimuth, and day length.
 
 To run the test suite:
 ```bash

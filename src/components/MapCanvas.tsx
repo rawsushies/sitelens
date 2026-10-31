@@ -12,11 +12,9 @@ import { SiteProject, SiteFeature, BasemapId } from '../types';
 import { ToolMode } from './ToolBar';
 import { BASEMAP_OPTIONS } from '../map/basemaps';
 import { calculateGeodesicDistance } from '../geometry';
-import { Compass, RotateCcw, AlertTriangle, Check, X } from 'lucide-react';
+import { Compass, AlertTriangle, Check, X } from 'lucide-react';
 
 // Setup MapLibre web worker reliably
-// Inlining the worker via an in-memory Blob URL guarantees zero-network-fetch reliability,
-// preventing 404 worker loading errors in Vite dev/preview and sandboxed iframe environments.
 if (typeof window !== 'undefined' && maplibregl.setWorkerUrl) {
   try {
     const blob = new Blob([workerScript], { type: 'application/javascript' });
@@ -39,6 +37,9 @@ interface MapCanvasProps {
   onCursorMove: (lng: number, lat: number) => void;
   flyToTarget: { lng: number; lat: number; zoom?: number } | null;
   fitBoundsTrigger: number;
+  completeTrigger?: number;
+  cancelTrigger?: number;
+  onDrawingActiveChange?: (isActive: boolean) => void;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -51,7 +52,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onSelectFeature,
   onCursorMove,
   flyToTarget,
-  fitBoundsTrigger
+  fitBoundsTrigger,
+  completeTrigger = 0,
+  cancelTrigger = 0,
+  onDrawingActiveChange,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -61,15 +65,36 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const [cursorPos, setCursorPos] = useState<[number, number] | null>(null);
   const [draggingVertexIndex, setDraggingVertexIndex] = useState<number | null>(null);
 
-  // References to keep event handlers fresh
-  const currentToolRef = useRef(currentTool);
-  currentToolRef.current = currentTool;
+  // Authoritative State Ref: completely eliminates stale closures across MapLibre event listeners
+  const stateRef = useRef({
+    project,
+    currentTool,
+    drawingPoints,
+    onSelectTool,
+    onStartGeometryTransaction,
+    onUpdateFeatureGeometry,
+    onCreateFeature,
+    onSelectFeature,
+    onCursorMove,
+  });
 
-  const drawingPointsRef = useRef(drawingPoints);
-  drawingPointsRef.current = drawingPoints;
+  // Keep stateRef synchronously up-to-date on EVERY render pass
+  stateRef.current = {
+    project,
+    currentTool,
+    drawingPoints,
+    onSelectTool,
+    onStartGeometryTransaction,
+    onUpdateFeatureGeometry,
+    onCreateFeature,
+    onSelectFeature,
+    onCursorMove,
+  };
 
-  const projectRef = useRef(project);
-  projectRef.current = project;
+  // Notify parent of drawing active state for keyboard coordination
+  useEffect(() => {
+    onDrawingActiveChange?.(drawingPoints.length > 0);
+  }, [drawingPoints.length, onDrawingActiveChange]);
 
   // Cleanly cancel incomplete drawings when switching tools without corrupting existing features
   useEffect(() => {
@@ -88,7 +113,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
   // Finish polygon drawing
   const finishPolygon = useCallback(() => {
-    const points = drawingPointsRef.current;
+    const { drawingPoints: points, project: curProj, onCreateFeature: commitFeature } = stateRef.current;
     if (points.length < 3) return;
 
     const closed = [...points, points[0]];
@@ -101,7 +126,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       },
       properties: {
         id: `boundary-${Date.now()}`,
-        name: `Site Boundary ${projectRef.current.features.filter(f => f.properties.featureType === 'site_boundary').length + 1}`,
+        name: `Site Boundary ${curProj.features.filter(f => f.properties.featureType === 'site_boundary').length + 1}`,
         featureType: 'site_boundary',
         color: '#8b5cf6',
         strokeColor: '#a78bfa',
@@ -111,13 +136,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         metrics: {}
       }
     };
-    onCreateFeature(newFeature);
+    commitFeature(newFeature);
     setDrawingPoints([]);
-  }, [onCreateFeature]);
+  }, []);
 
   // Finish line drawing
-  const finishLine = useCallback((points = drawingPointsRef.current, type: 'measure_line' | 'transect' = 'measure_line') => {
-    if (points.length < 2) return;
+  const finishLine = useCallback((type: 'measure_line' | 'transect' = 'measure_line', customPoints?: [number, number][]) => {
+    const { drawingPoints: points, project: curProj, onCreateFeature: commitFeature } = stateRef.current;
+    const pts = customPoints || points;
+    if (pts.length < 2) return;
 
     const isTransect = type === 'transect';
     const newFeature: SiteFeature = {
@@ -125,13 +152,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       id: `${type}-${Date.now()}`,
       geometry: {
         type: 'LineString',
-        coordinates: points
+        coordinates: pts
       },
       properties: {
         id: `${type}-${Date.now()}`,
         name: isTransect
-          ? `Site Transect ${projectRef.current.features.filter(f => f.properties.featureType === 'transect').length + 1}`
-          : `Measure Line ${projectRef.current.features.filter(f => f.properties.featureType === 'measure_line').length + 1}`,
+          ? `Site Transect ${curProj.features.filter(f => f.properties.featureType === 'transect').length + 1}`
+          : `Measure Line ${curProj.features.filter(f => f.properties.featureType === 'measure_line').length + 1}`,
         featureType: isTransect ? 'transect' : 'measure_line',
         color: isTransect ? '#f59e0b' : '#38bdf8',
         strokeColor: isTransect ? '#fbbf24' : '#0284c7',
@@ -141,13 +168,30 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         metrics: {}
       }
     };
-    onCreateFeature(newFeature);
+    commitFeature(newFeature);
     setDrawingPoints([]);
-  }, [onCreateFeature]);
+  }, []);
 
-  // Coordinated map click handler
+  // External complete trigger from consolidated keyboard handler
+  useEffect(() => {
+    if (completeTrigger === 0) return;
+    const { currentTool: tool, drawingPoints: pts } = stateRef.current;
+    if (tool === 'polygon' && pts.length >= 3) {
+      finishPolygon();
+    } else if ((tool === 'line' || tool === 'transect') && pts.length >= 2) {
+      finishLine(tool === 'transect' ? 'transect' : 'measure_line');
+    }
+  }, [completeTrigger, finishPolygon, finishLine]);
+
+  // External cancel trigger from consolidated keyboard handler
+  useEffect(() => {
+    if (cancelTrigger === 0) return;
+    setDrawingPoints([]);
+  }, [cancelTrigger]);
+
+  // MapLibre click handler using current state from stateRef
   const handleMapClickCoords = useCallback((lng: number, lat: number) => {
-    const tool = currentToolRef.current;
+    const { currentTool: tool, drawingPoints: currentPoints, onSelectFeature: deselect, project: curProj, onCreateFeature: commitFeature } = stateRef.current;
     if (tool === 'pan') return;
 
     const point: [number, number] = [
@@ -156,13 +200,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     ];
 
     if (tool === 'select') {
-      // Clicking empty map canvas deselects active feature
-      onSelectFeature(null);
+      // Clicking empty canvas deselects active feature
+      deselect(null);
       return;
     }
 
     if (tool === 'polygon') {
-      const currentPoints = drawingPointsRef.current;
       // If user clicked close to the first point (> 2 points), finish polygon
       if (currentPoints.length >= 3) {
         const first = currentPoints[0];
@@ -176,10 +219,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     } else if (tool === 'line') {
       setDrawingPoints(prev => [...prev, point]);
     } else if (tool === 'transect') {
-      const currentPoints = drawingPointsRef.current;
       if (currentPoints.length === 1) {
-        // Transect is defined by 2 endpoints
-        finishLine([currentPoints[0], point], 'transect');
+        // Transect is committed on second point
+        finishLine('transect', [currentPoints[0], point]);
         return;
       }
       setDrawingPoints([point]);
@@ -193,7 +235,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         },
         properties: {
           id: `point-${Date.now()}`,
-          name: `Spot Datum ${projectRef.current.features.filter(f => f.properties.featureType === 'datum_point').length + 1}`,
+          name: `Spot Datum ${curProj.features.filter(f => f.properties.featureType === 'datum_point').length + 1}`,
           featureType: 'datum_point',
           color: '#06b6d4',
           strokeColor: '#22d3ee',
@@ -203,22 +245,21 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           metrics: {}
         }
       };
-      onCreateFeature(newFeature);
-    }
-  }, [finishPolygon, finishLine, onCreateFeature, onSelectFeature]);
-
-  // Double click handler on map
-  const handleMapDoubleClick = useCallback(() => {
-    const tool = currentToolRef.current;
-    const currentPoints = drawingPointsRef.current;
-    if (tool === 'polygon' && currentPoints.length >= 3) {
-      finishPolygon();
-    } else if ((tool === 'line' || tool === 'transect') && currentPoints.length >= 2) {
-      finishLine(currentPoints, tool === 'transect' ? 'transect' : 'measure_line');
+      commitFeature(newFeature);
     }
   }, [finishPolygon, finishLine]);
 
-  // Initialize MapLibre
+  // Double click handler on map
+  const handleMapDoubleClick = useCallback(() => {
+    const { currentTool: tool, drawingPoints: currentPoints } = stateRef.current;
+    if (tool === 'polygon' && currentPoints.length >= 3) {
+      finishPolygon();
+    } else if ((tool === 'line' || tool === 'transect') && currentPoints.length >= 2) {
+      finishLine(tool === 'transect' ? 'transect' : 'measure_line');
+    }
+  }, [finishPolygon, finishLine]);
+
+  // Initialize MapLibre ONCE - Preserves map instance across all state updates
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
@@ -234,14 +275,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       attributionControl: false
     });
 
-    // Add scale bar
-    const scale = new maplibregl.ScaleControl({
-      maxWidth: 160,
-      unit: 'metric'
-    });
+    const scale = new maplibregl.ScaleControl({ maxWidth: 160, unit: 'metric' });
     map.addControl(scale, 'bottom-left');
 
-    // Add custom attribution control
     const attrib = new maplibregl.AttributionControl({
       compact: false,
       customAttribution: 'SiteLens WGS84 Geodesic Precision'
@@ -251,7 +287,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     map.on('mousemove', (e) => {
       const lng = e.lngLat.lng;
       const lat = e.lngLat.lat;
-      onCursorMove(lng, lat);
+      stateRef.current.onCursorMove(lng, lat);
       setCursorPos([lng, lat]);
     });
 
@@ -320,39 +356,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     if (hasCoords) {
       mapRef.current.fitBounds(bounds, { padding: 60, maxZoom: 18 });
     }
-  }, [fitBoundsTrigger]);
-
-  // Keyboard shortcuts (Enter, Escape)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)
-      ) {
-        return;
-      }
-
-      if (e.key === 'Escape') {
-        if (drawingPointsRef.current.length > 0) {
-          setDrawingPoints([]);
-        } else {
-          onSelectFeature(null);
-          onSelectTool?.('select');
-        }
-      } else if (e.key === 'Enter') {
-        const pts = drawingPointsRef.current;
-        const tool = currentToolRef.current;
-        if (tool === 'polygon' && pts.length >= 3) {
-          finishPolygon();
-        } else if ((tool === 'line' || tool === 'transect') && pts.length >= 2) {
-          finishLine(pts, tool === 'transect' ? 'transect' : 'measure_line');
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [finishPolygon, finishLine, onSelectFeature, onSelectTool]);
+  }, [fitBoundsTrigger, project.features]);
 
   // Vertex Dragging Logic
   const activeFeature = project.features.find(f => f.id === project.activeFeatureId);
@@ -360,45 +364,45 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const handleVertexMouseDown = (index: number, e: React.MouseEvent) => {
     e.stopPropagation();
     if (currentTool !== 'select') return;
-    onStartGeometryTransaction?.();
+    stateRef.current.onStartGeometryTransaction?.();
     setDraggingVertexIndex(index);
   };
 
   const handleVertexDelete = (index: number) => {
     if (!activeFeature) return;
-    onStartGeometryTransaction?.();
+    stateRef.current.onStartGeometryTransaction?.();
 
     if (activeFeature.geometry.type === 'Polygon') {
       const ring = [...activeFeature.geometry.coordinates[0]];
-      // Ring has (n + 1) points; must have at least 4 unique points before delete to remain a valid triangle
+      // Ring has (n + 1) points; must have >= 4 points before delete to remain a valid triangle
       if (ring.length <= 4) return;
       ring.splice(index, 1);
-      // Ensure closure
+      // Maintain ring closure
       ring[ring.length - 1] = ring[0];
-      onUpdateFeatureGeometry(activeFeature.id, [ring], false);
+      stateRef.current.onUpdateFeatureGeometry(activeFeature.id, [ring], false);
     } else if (activeFeature.geometry.type === 'LineString') {
       const coords = [...activeFeature.geometry.coordinates];
       if (coords.length <= 2) return;
       coords.splice(index, 1);
-      onUpdateFeatureGeometry(activeFeature.id, coords, false);
+      stateRef.current.onUpdateFeatureGeometry(activeFeature.id, coords, false);
     }
   };
 
   const handleMidpointClick = (insertIndex: number, midpoint: [number, number], e: React.MouseEvent) => {
     e.stopPropagation();
     if (!activeFeature) return;
-    onStartGeometryTransaction?.();
+    stateRef.current.onStartGeometryTransaction?.();
 
     if (activeFeature.geometry.type === 'Polygon') {
       const ring = [...activeFeature.geometry.coordinates[0]];
       ring.splice(insertIndex + 1, 0, midpoint);
-      // Ensure closure
+      // Maintain ring closure
       ring[ring.length - 1] = ring[0];
-      onUpdateFeatureGeometry(activeFeature.id, [ring], false);
+      stateRef.current.onUpdateFeatureGeometry(activeFeature.id, [ring], false);
     } else if (activeFeature.geometry.type === 'LineString') {
       const coords = [...activeFeature.geometry.coordinates];
       coords.splice(insertIndex + 1, 0, midpoint);
-      onUpdateFeatureGeometry(activeFeature.id, coords, false);
+      stateRef.current.onUpdateFeatureGeometry(activeFeature.id, coords, false);
     }
   };
 
@@ -420,18 +424,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (activeFeature.geometry.type === 'Polygon') {
         const ring = [...activeFeature.geometry.coordinates[0]];
         ring[draggingVertexIndex] = newCoord;
-        // If dragging vertex 0 or last vertex, keep closed
         if (draggingVertexIndex === 0 || draggingVertexIndex === ring.length - 1) {
           ring[0] = newCoord;
           ring[ring.length - 1] = newCoord;
         }
-        onUpdateFeatureGeometry(activeFeature.id, [ring], false);
+        stateRef.current.onUpdateFeatureGeometry(activeFeature.id, [ring], false);
       } else if (activeFeature.geometry.type === 'LineString') {
         const coords = [...activeFeature.geometry.coordinates];
         coords[draggingVertexIndex] = newCoord;
-        onUpdateFeatureGeometry(activeFeature.id, coords, false);
+        stateRef.current.onUpdateFeatureGeometry(activeFeature.id, coords, false);
       } else if (activeFeature.geometry.type === 'Point') {
-        onUpdateFeatureGeometry(activeFeature.id, newCoord, false);
+        stateRef.current.onUpdateFeatureGeometry(activeFeature.id, newCoord, false);
       }
     };
 
@@ -445,7 +448,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [draggingVertexIndex, activeFeature, onUpdateFeatureGeometry]);
+  }, [draggingVertexIndex, activeFeature]);
 
   // Convert geo coordinates to screen pixels for SVG overlay
   const projectToPixel = (coord: [number, number]): { x: number; y: number } | null => {
@@ -858,7 +861,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
               <button
                 onClick={() => {
                   if (currentTool === 'polygon') finishPolygon();
-                  else finishLine(drawingPoints, currentTool === 'transect' ? 'transect' : 'measure_line');
+                  else finishLine(currentTool === 'transect' ? 'transect' : 'measure_line');
                 }}
                 className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-bold flex items-center gap-1 transition-colors"
               >
