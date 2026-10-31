@@ -118,13 +118,45 @@ export class DatasetRegistry {
 
     // 3. Return promise wrapped with caller's independent AbortSignal listener
     const callerSignal = options.signal;
-    if (callerSignal) {
-      if (callerSignal.aborted) {
-        currentEntry.subscribers.delete(subscriberId);
+    if (callerSignal && callerSignal.aborted) {
+      currentEntry.subscribers.delete(subscriberId);
+      if (currentEntry.subscribers.size === 0) {
+        currentEntry.underlyingAbortController.abort();
+      }
+      return {
+        id: `${providerId}-aborted`,
+        providerId,
+        status: 'unavailable',
+        metadata: provider.defaultMetadata,
+        data: null,
+        error: {
+          code: 'ABORTED',
+          message: 'Caller aborted request prior to execution.',
+          retryable: false,
+          timestamp: new Date().toISOString()
+        }
+      };
+    }
+
+    return new Promise<SpatialDataset<TData>>((resolve, reject) => {
+      let settled = false;
+
+      const cleanup = () => {
+        if (!settled) {
+          settled = true;
+          currentEntry.subscribers.delete(subscriberId);
+          if (callerSignal) {
+            callerSignal.removeEventListener('abort', onAbort);
+          }
+        }
+      };
+
+      const onAbort = () => {
+        cleanup();
         if (currentEntry.subscribers.size === 0) {
           currentEntry.underlyingAbortController.abort();
         }
-        return {
+        resolve({
           id: `${providerId}-aborted`,
           providerId,
           status: 'unavailable',
@@ -132,51 +164,27 @@ export class DatasetRegistry {
           data: null,
           error: {
             code: 'ABORTED',
-            message: 'Caller aborted request prior to execution.',
+            message: 'Request was cancelled by caller.',
             retryable: false,
             timestamp: new Date().toISOString()
           }
-        };
+        });
+      };
+
+      if (callerSignal) {
+        callerSignal.addEventListener('abort', onAbort, { once: true });
       }
 
-      return new Promise<SpatialDataset<TData>>((resolve, reject) => {
-        const onAbort = () => {
-          callerSignal.removeEventListener('abort', onAbort);
-          currentEntry.subscribers.delete(subscriberId);
-          // Only abort underlying network request if NO other callers remain
-          if (currentEntry.subscribers.size === 0) {
-            currentEntry.underlyingAbortController.abort();
-          }
-          resolve({
-            id: `${providerId}-aborted`,
-            providerId,
-            status: 'unavailable',
-            metadata: provider.defaultMetadata,
-            data: null,
-            error: {
-              code: 'ABORTED',
-              message: 'Request was cancelled by caller.',
-              retryable: false,
-              timestamp: new Date().toISOString()
-            }
-          });
-        };
-
-        callerSignal.addEventListener('abort', onAbort, { once: true });
-
-        currentEntry.promise
-          .then(res => {
-            callerSignal.removeEventListener('abort', onAbort);
-            resolve(res as SpatialDataset<TData>);
-          })
-          .catch(err => {
-            callerSignal.removeEventListener('abort', onAbort);
-            reject(err);
-          });
-      });
-    }
-
-    return currentEntry.promise as Promise<SpatialDataset<TData>>;
+      currentEntry.promise
+        .then(res => {
+          cleanup();
+          resolve(res as SpatialDataset<TData>);
+        })
+        .catch(err => {
+          cleanup();
+          reject(err);
+        });
+    });
   }
 
   public getCache(): BoundedLRUCache<SpatialDataset> {

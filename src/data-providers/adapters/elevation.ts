@@ -17,8 +17,8 @@ export interface ElevationData {
   latitude: number;
   longitude: number;
   elevationM: number | null;
-  model: string;
-  resolutionM: number;
+  model: string | null;
+  resolutionM: number | null;
   metric: ProvenancedMetric;
 }
 
@@ -26,25 +26,25 @@ const ELEVATION_METADATA: DatasetMetadata = {
   id: 'open-meteo-elevation',
   title: 'Digital Elevation Model (DEM) Ground Surface Height',
   description: 'Surface ground elevation referenced to Mean Sea Level (EGM96 geoid / MSL vertical datum).',
-  source: 'Open-Meteo Elevation API (Multi-Source Global DEM Compilation: Copernicus GLO-90, SRTM, and GTOPO30/ETOPO1)',
+  source: 'Open-Meteo Elevation API (Multi-Source Global DEM Compilation)',
   sourceUrl: 'https://open-meteo.com/en/docs/elevation-api',
   license: {
-    id: 'Open-Meteo-Elevation-Blend',
+    id: 'Open-Meteo-Elevation',
     name: 'Open Data Commons / Public Domain Composite',
     url: 'https://open-meteo.com',
-    attributionStatement: 'Elevation data by Open-Meteo.com (Copernicus / NASA / USGS blend)',
+    attributionStatement: 'Elevation data by Open-Meteo.com',
     requiresAttribution: true,
     commercialUseAllowed: true,
   },
-  attribution: 'Elevation data by Open-Meteo.com (Copernicus DEM / SRTM blend)',
-  timestampOrReferencePeriod: 'Multi-Mission Global DEM Baseline (2000-2020)',
-  spatialResolution: 'Variable raster DEM resolution (~90m in continental landmasses; up to 1km in polar/ocean margins)',
+  attribution: 'Elevation data by Open-Meteo.com',
+  timestampOrReferencePeriod: 'Multi-Mission Global DEM Baseline',
+  spatialResolution: 'Variable / unverified per-coordinate (Open-Meteo composite API does not return sub-model or cell resolution)',
   method: 'Bilinear interpolation from composite global DEM raster grid',
   crs: 'EPSG:4326 horizontal, EGM96 geoid vertical',
   units: {
     elevation: 'metres above sea level (m ASL)'
   },
-  limitations: 'Composite raster DEM compilation. High-latitude and oceanic boundaries rely on coarse global models. Surface heights are smoothed across the grid cell; not suitable as a legal boundary survey or architectural finished-floor datum.',
+  limitations: 'Composite raster DEM compilation. Open-Meteo does not return individual raster sub-model identification or exact cell resolution in API response payload. Surface heights are smoothed across the grid cell; not suitable as a legal boundary survey or architectural finished-floor datum.',
   retrievedAt: new Date().toISOString()
 };
 
@@ -134,8 +134,8 @@ export class ElevationDataProvider implements IDataProvider<ElevationQuery, Elev
         latitude: lat,
         longitude: lng,
         elevationM: elevationVal,
-        model: 'Copernicus DEM 90m / SRTM Blend',
-        resolutionM: 90,
+        model: null, // Open-Meteo elevation API payload does not identify the underlying DEM raster tileset
+        resolutionM: null, // Open-Meteo elevation API payload does not specify cell resolution
         metric
       },
       metrics: {

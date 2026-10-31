@@ -22,13 +22,28 @@ export class BoundedLRUCache<V = any> {
   }
 
   /**
+   * Recursively normalizes coordinates with 8 decimal places (~1.1mm precision)
+   * to preserve site boundary identity while eliminating float jitter
+   */
+  private static canonicalizeCoords(val: any): any {
+    if (val === null || val === undefined) return null;
+    if (typeof val === 'number') {
+      return Number(val.toFixed(8));
+    }
+    if (Array.isArray(val)) {
+      return val.map(item => BoundedLRUCache.canonicalizeCoords(item));
+    }
+    return val;
+  }
+
+  /**
    * Recursively normalizes an arbitrary value for stable, deterministic cache serialization
    */
   private static canonicalize(val: any): any {
     if (val === null || val === undefined) return null;
     if (typeof val === 'number') {
-      // Float precision: round to 5 decimal places (~1.1m precision) for geographic coordinates
-      return Number(val.toFixed(5));
+      // Preserve up to 8 decimal places for numerical precision without truncation
+      return Number(val.toFixed(8));
     }
     if (typeof val === 'boolean' || typeof val === 'string') {
       return val;
@@ -42,7 +57,11 @@ export class BoundedLRUCache<V = any> {
       for (const k of sortedKeys) {
         // Exclude transient execution parameters
         if (k === 'signal' || k === 'bypassCache' || k === 'timeoutMs') continue;
-        result[k] = BoundedLRUCache.canonicalize(val[k]);
+        if (k === 'siteBoundary' || k === 'bbox' || k === 'coordinates') {
+          result[k] = BoundedLRUCache.canonicalizeCoords(val[k]);
+        } else {
+          result[k] = BoundedLRUCache.canonicalize(val[k]);
+        }
       }
       return result;
     }
@@ -64,10 +83,10 @@ export class BoundedLRUCache<V = any> {
     if (options) {
       const normalizedOpts: Record<string, any> = {};
       if (options.siteBoundary && Array.isArray(options.siteBoundary)) {
-        normalizedOpts.siteBoundary = BoundedLRUCache.canonicalize(options.siteBoundary);
+        normalizedOpts.siteBoundary = BoundedLRUCache.canonicalizeCoords(options.siteBoundary);
       }
       if (options.bbox && Array.isArray(options.bbox)) {
-        normalizedOpts.bbox = BoundedLRUCache.canonicalize(options.bbox);
+        normalizedOpts.bbox = BoundedLRUCache.canonicalizeCoords(options.bbox);
       }
       if (typeof options.radiusMeters === 'number') {
         normalizedOpts.radiusMeters = Number(options.radiusMeters.toFixed(1));

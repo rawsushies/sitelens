@@ -13,9 +13,10 @@ import {
   segmentsIntersect,
   isLineCrossingRing,
   polygonIntersectsBoundary,
-  hasAntimeridianCrossing
+  hasAntimeridianCrossing,
+  unwrapRingAntimeridian
 } from './spatial-filter';
-import { OSMDataProvider } from './adapters/osm';
+import { OSMDataProvider, reconstructClosedRingsFromFragments } from './adapters/osm';
 import { OpenMeteoWeatherProvider } from './adapters/open-meteo';
 import { ElevationDataProvider } from './adapters/elevation';
 import { resilientFetch } from './client';
@@ -68,10 +69,49 @@ describe('M2.0.1 Cache Correctness & Key Isolation', () => {
     expect(keyB).not.toBe(keyNoBoundary);
   });
 
-  it('generates normalized keys with stable coordinate precision rounding', () => {
-    const key1 = BoundedLRUCache.generateKey('osm', { lat: 51.4768881, lng: -0.0015432, radius: 300 });
-    const key2 = BoundedLRUCache.generateKey('osm', { radius: 300, lng: -0.0015431, lat: 51.4768882 });
+  it('generates normalized keys with stable parameter ordering', () => {
+    const key1 = BoundedLRUCache.generateKey('osm', { lat: 51.47688812, lng: -0.00154321, radius: 300 });
+    const key2 = BoundedLRUCache.generateKey('osm', { radius: 300, lng: -0.00154321, lat: 51.47688812 });
     expect(key1).toBe(key2);
+  });
+
+  it('prevents cache collisions for coordinates and boundaries differing by < 0.00001 degrees', () => {
+    // 7th decimal place difference (0.0000001 deg ~11mm)
+    const key1 = BoundedLRUCache.generateKey('osm', { lat: 51.4768881, lng: -0.0015432 });
+    const key2 = BoundedLRUCache.generateKey('osm', { lat: 51.4768882, lng: -0.0015431 });
+    expect(key1).not.toBe(key2);
+
+    // Site boundaries differing by 0.000001 deg
+    const boundaryA: [number, number][] = [
+      [0.000001, 51.476000],
+      [0.000001, 51.477000],
+      [0.000010, 51.477000],
+      [0.000010, 51.476000],
+      [0.000001, 51.476000]
+    ];
+    const boundaryB: [number, number][] = [
+      [0.000002, 51.476000],
+      [0.000002, 51.477000],
+      [0.000010, 51.477000],
+      [0.000010, 51.476000],
+      [0.000002, 51.476000]
+    ];
+    const keyBA = BoundedLRUCache.generateKey('osm', { q: 1 }, { siteBoundary: boundaryA });
+    const keyBB = BoundedLRUCache.generateKey('osm', { q: 1 }, { siteBoundary: boundaryB });
+    expect(keyBA).not.toBe(keyBB);
+  });
+
+  it('excludes transient execution parameters (signal, bypassCache, timeoutMs) from cache keys', () => {
+    const controller = new AbortController();
+    const keyClean = BoundedLRUCache.generateKey('osm', { lat: 51.4769, lng: -0.0015 });
+    const keyTransient = BoundedLRUCache.generateKey('osm', { 
+      lat: 51.4769, 
+      lng: -0.0015,
+      signal: controller.signal,
+      bypassCache: true,
+      timeoutMs: 5000 
+    });
+    expect(keyClean).toBe(keyTransient);
   });
 
   it('invalidates entries by prefix', () => {
@@ -141,6 +181,55 @@ describe('M2.0.1 In-Flight Request Deduplication & Independent Cancellation', ()
 
       // Verify only 1 network fetch was dispatched due to deduplication
       expect(fetchCalls).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('cancels underlying network request when all active subscribers abort', async () => {
+    const originalFetch = globalThis.fetch;
+    let underlyingAborted = false;
+
+    globalThis.fetch = vi.fn().mockImplementation(async (_url, init) => {
+      if (init?.signal) {
+        init.signal.addEventListener('abort', () => {
+          underlyingAborted = true;
+        });
+      }
+      await new Promise(r => setTimeout(r, 60));
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          latitude: 51.4769,
+          longitude: -0.0015,
+          current: { temperature_2m: 16.5, time: '2026-10-31T00:00' }
+        })
+      };
+    });
+
+    try {
+      datasetRegistry.clearAllCache();
+      const controller1 = new AbortController();
+      const controller2 = new AbortController();
+
+      const p1 = datasetRegistry.fetch('open-meteo-weather', { latitude: 51.4769, longitude: -0.0015 }, {
+        signal: controller1.signal,
+        bypassCache: true
+      });
+      const p2 = datasetRegistry.fetch('open-meteo-weather', { latitude: 51.4769, longitude: -0.0015 }, {
+        signal: controller2.signal,
+        bypassCache: true
+      });
+
+      controller1.abort();
+      controller2.abort();
+
+      const [res1, res2] = await Promise.all([p1, p2]);
+      expect(res1.error?.code).toBe('ABORTED');
+      expect(res2.error?.code).toBe('ABORTED');
+      expect(underlyingAborted).toBe(true);
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -255,22 +344,283 @@ describe('M2.0.1 Robust Spatial Filtering & Geometry Intersection', () => {
     // Coordinates jumping from Fiji (+179) to Samoa (-179)
     expect(hasAntimeridianCrossing([[179.5, -16.0], [-179.5, -16.0]])).toBe(true);
   });
+
+  it('unwraps coordinates across antimeridian without cross-ring state pollution', () => {
+    // Eastward crossing: +179 to -179 -> -179 should unwrap to +181
+    const eastCrossing: [number, number][] = [[179.0, 0.0], [-179.0, 0.0], [-178.0, 0.0]];
+    const unwrappedEast = unwrapRingAntimeridian(eastCrossing);
+    expect(unwrappedEast[0]).toEqual([179.0, 0.0]);
+    expect(unwrappedEast[1][0]).toBe(181.0);
+    expect(unwrappedEast[2][0]).toBe(182.0);
+
+    // Westward crossing: -179 to +179 -> +179 should unwrap to -181
+    const westCrossing: [number, number][] = [[-179.0, 0.0], [179.0, 0.0], [178.0, 0.0]];
+    const unwrappedWest = unwrapRingAntimeridian(westCrossing);
+    expect(unwrappedWest[0]).toEqual([-179.0, 0.0]);
+    expect(unwrappedWest[1][0]).toBe(-181.0);
+    expect(unwrappedWest[2][0]).toBe(-182.0);
+
+    // Independent rings: ring 2 must not inherit offset from ring 1
+    const ring1 = unwrapRingAntimeridian([[179.0, 0.0], [-179.0, 0.0]]);
+    const ring2 = unwrapRingAntimeridian([[10.0, 0.0], [11.0, 0.0]]);
+    expect(ring1[1][0]).toBe(181.0);
+    expect(ring2[0][0]).toBe(10.0);
+    expect(ring2[1][0]).toBe(11.0);
+  });
 });
 
-describe('M2.0.1 OSM Overpass Multipolygon Relations & Truncation', () => {
-  it('correctly reconstructs multipolygon building relations with outer and inner rings, and deduplicates ways', async () => {
-    const provider = new OSMDataProvider();
+describe('M2.0.2 OSM Overpass Multipolygon Relations & Ring Reconstruction (11 Regression Tests)', () => {
+  it('1. reconstructs one outer ring composed of four fragmented ways', () => {
+    const f1: [number, number][] = [[0, 0], [10, 0]];
+    const f2: [number, number][] = [[10, 0], [10, 10]];
+    const f3: [number, number][] = [[10, 10], [0, 10]];
+    const f4: [number, number][] = [[0, 10], [0, 0]];
 
-    // Mock Overpass response containing 1 multipolygon relation and its member ways
+    const result = reconstructClosedRingsFromFragments([f1, f2, f3, f4]);
+    expect(result.closedRings.length).toBe(1);
+    expect(result.closedRings[0].length).toBe(5);
+    expect(result.closedRings[0][0]).toEqual([0, 0]);
+    expect(result.closedRings[0][4]).toEqual([0, 0]);
+    expect(result.incompleteFragmentsCount).toBe(0);
+    expect(result.invalidRingsCount).toBe(0);
+  });
+
+  it('2. reconstructs outer ring when fragments are supplied in reversed order', () => {
+    const f1: [number, number][] = [[0, 0], [10, 0]];
+    const f2: [number, number][] = [[10, 0], [10, 10]];
+    const f3: [number, number][] = [[10, 10], [0, 10]];
+    const f4: [number, number][] = [[0, 10], [0, 0]];
+
+    const result = reconstructClosedRingsFromFragments([f4, f3, f2, f1]);
+    expect(result.closedRings.length).toBe(1);
+    expect(result.closedRings[0].length).toBe(5);
+    expect(result.incompleteFragmentsCount).toBe(0);
+  });
+
+  it('3. reconstructs outer ring when fragment coordinate direction is reversed (endpoint matching in either orientation)', () => {
+    const f1: [number, number][] = [[0, 0], [10, 0]];
+    const f2: [number, number][] = [[10, 10], [10, 0]]; // Reversed direction: tail connects to f1 tail
+    const f3: [number, number][] = [[10, 10], [0, 10]];
+    const f4: [number, number][] = [[0, 0], [0, 10]];   // Reversed direction: tail connects to f3 tail
+
+    const result = reconstructClosedRingsFromFragments([f1, f2, f3, f4]);
+    expect(result.closedRings.length).toBe(1);
+    expect(result.closedRings[0].length).toBe(5);
+    expect(result.incompleteFragmentsCount).toBe(0);
+  });
+
+  it('4. reconstructs multiple independent outer rings', () => {
+    // Ring A
+    const a1: [number, number][] = [[0, 0], [5, 0]];
+    const a2: [number, number][] = [[5, 0], [5, 5]];
+    const a3: [number, number][] = [[5, 5], [0, 5]];
+    const a4: [number, number][] = [[0, 5], [0, 0]];
+
+    // Ring B
+    const b1: [number, number][] = [[10, 10], [15, 10]];
+    const b2: [number, number][] = [[15, 10], [15, 15]];
+    const b3: [number, number][] = [[15, 15], [10, 15]];
+    const b4: [number, number][] = [[10, 15], [10, 10]];
+
+    const result = reconstructClosedRingsFromFragments([a1, b1, a2, b2, a3, b3, a4, b4]);
+    expect(result.closedRings.length).toBe(2);
+    expect(result.incompleteFragmentsCount).toBe(0);
+    expect(result.invalidRingsCount).toBe(0);
+  });
+
+  it('5. reconstructs relation with one outer ring and one inner ring (donut polygon)', async () => {
+    const provider = new OSMDataProvider();
+    const mockElements = [
+      {
+        type: 'relation',
+        id: 101,
+        tags: { type: 'multipolygon', building: 'yes', name: 'Single Courtyard Building' },
+        members: [
+          {
+            type: 'way',
+            ref: 1001,
+            role: 'outer',
+            geometry: [
+              { lat: 0, lon: 0 }, { lat: 10, lon: 0 }, { lat: 10, lon: 10 }, { lat: 0, lon: 10 }, { lat: 0, lon: 0 }
+            ]
+          },
+          {
+            type: 'way',
+            ref: 1002,
+            role: 'inner',
+            geometry: [
+              { lat: 2, lon: 2 }, { lat: 8, lon: 2 }, { lat: 8, lon: 8 }, { lat: 2, lon: 8 }, { lat: 2, lon: 2 }
+            ]
+          }
+        ]
+      }
+    ];
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ elements: mockElements })
+    } as any);
+
+    try {
+      const res = await provider.fetch({ latitude: 5, longitude: 5 });
+      expect(res.status).toBe('success');
+      const feat = res.featureCollection?.features[0];
+      expect(feat?.geometry.type).toBe('Polygon');
+      expect((feat?.geometry as any).coordinates.length).toBe(2); // 1 outer + 1 inner
+      expect(feat?.properties?.holeCount).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('6. reconstructs relation with one outer ring and multiple inner rings', async () => {
+    const provider = new OSMDataProvider();
+    const mockElements = [
+      {
+        type: 'relation',
+        id: 102,
+        tags: { type: 'multipolygon', building: 'commercial', name: 'Dual Courtyard Complex' },
+        members: [
+          {
+            type: 'way',
+            ref: 2001,
+            role: 'outer',
+            geometry: [
+              { lat: 0, lon: 0 }, { lat: 30, lon: 0 }, { lat: 30, lon: 30 }, { lat: 0, lon: 30 }, { lat: 0, lon: 0 }
+            ]
+          },
+          {
+            type: 'way',
+            ref: 2002,
+            role: 'inner',
+            geometry: [
+              { lat: 2, lon: 2 }, { lat: 8, lon: 2 }, { lat: 8, lon: 8 }, { lat: 2, lon: 8 }, { lat: 2, lon: 2 }
+            ]
+          },
+          {
+            type: 'way',
+            ref: 2003,
+            role: 'inner',
+            geometry: [
+              { lat: 12, lon: 12 }, { lat: 18, lon: 12 }, { lat: 18, lon: 18 }, { lat: 12, lon: 18 }, { lat: 12, lon: 12 }
+            ]
+          }
+        ]
+      }
+    ];
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ elements: mockElements })
+    } as any);
+
+    try {
+      const res = await provider.fetch({ latitude: 15, longitude: 15 });
+      expect(res.status).toBe('success');
+      const feat = res.featureCollection?.features[0];
+      expect(feat?.geometry.type).toBe('Polygon');
+      expect((feat?.geometry as any).coordinates.length).toBe(3); // 1 outer + 2 inners
+      expect(feat?.properties?.holeCount).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('7. assigns holes to the correct containing outer ring when multiple outer rings exist', async () => {
+    const provider = new OSMDataProvider();
+    const mockElements = [
+      {
+        type: 'relation',
+        id: 103,
+        tags: { type: 'multipolygon', building: 'yes', name: 'Twin Atrium Pavilion' },
+        members: [
+          // Outer A at [0, 0] to [10, 10]
+          {
+            type: 'way',
+            ref: 3001,
+            role: 'outer',
+            geometry: [
+              { lat: 0, lon: 0 }, { lat: 10, lon: 0 }, { lat: 10, lon: 10 }, { lat: 0, lon: 10 }, { lat: 0, lon: 0 }
+            ]
+          },
+          // Hole A at [2, 2] to [8, 8] inside Outer A
+          {
+            type: 'way',
+            ref: 3002,
+            role: 'inner',
+            geometry: [
+              { lat: 2, lon: 2 }, { lat: 8, lon: 2 }, { lat: 8, lon: 8 }, { lat: 2, lon: 8 }, { lat: 2, lon: 2 }
+            ]
+          },
+          // Outer B at [20, 20] to [30, 30]
+          {
+            type: 'way',
+            ref: 3003,
+            role: 'outer',
+            geometry: [
+              { lat: 20, lon: 20 }, { lat: 30, lon: 20 }, { lat: 30, lon: 30 }, { lat: 20, lon: 30 }, { lat: 20, lon: 20 }
+            ]
+          },
+          // Hole B at [22, 22] to [28, 28] inside Outer B
+          {
+            type: 'way',
+            ref: 3004,
+            role: 'inner',
+            geometry: [
+              { lat: 22, lon: 22 }, { lat: 28, lon: 22 }, { lat: 28, lon: 28 }, { lat: 22, lon: 28 }, { lat: 22, lon: 22 }
+            ]
+          }
+        ]
+      }
+    ];
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ elements: mockElements })
+    } as any);
+
+    try {
+      const res = await provider.fetch({ latitude: 15, longitude: 15 });
+      expect(res.status).toBe('success');
+      const feat = res.featureCollection?.features[0];
+      expect(feat?.geometry.type).toBe('MultiPolygon');
+      const multiCoords = (feat?.geometry as any).coordinates;
+      expect(multiCoords.length).toBe(2); // 2 polygon parts
+      expect(multiCoords[0].length).toBe(2); // Polygon 0 has 1 outer and 1 hole
+      expect(multiCoords[1].length).toBe(2); // Polygon 1 has 1 outer and 1 hole
+      expect(feat?.properties?.outerCount).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('8. detects open or incomplete ring without creating an artificial closing edge', () => {
+    // 3 segments of a square, missing the closing edge from [0, 10] to [0, 0]
+    const f1: [number, number][] = [[0, 0], [10, 0]];
+    const f2: [number, number][] = [[10, 0], [10, 10]];
+    const f3: [number, number][] = [[10, 10], [0, 10]];
+
+    const result = reconstructClosedRingsFromFragments([f1, f2, f3]);
+    expect(result.closedRings.length).toBe(0); // MUST NOT artificially close with a fake edge
+    expect(result.incompleteFragmentsCount).toBe(1);
+  });
+
+  it('9. deduplicates member ways so they are not returned twice', async () => {
+    const provider = new OSMDataProvider();
     const mockElements = [
       {
         type: 'relation',
         id: 9901,
-        tags: {
-          type: 'multipolygon',
-          building: 'university',
-          name: 'Academic Quadrangle'
-        },
+        tags: { type: 'multipolygon', building: 'university', name: 'Academic Quadrangle' },
         members: [
           {
             type: 'way',
@@ -283,22 +633,10 @@ describe('M2.0.1 OSM Overpass Multipolygon Relations & Truncation', () => {
               { lat: 51.4760, lon: -0.0010 },
               { lat: 51.4760, lon: -0.0020 }
             ]
-          },
-          {
-            type: 'way',
-            ref: 502,
-            role: 'inner',
-            geometry: [
-              { lat: 51.4765, lon: -0.0018 },
-              { lat: 51.4775, lon: -0.0018 },
-              { lat: 51.4775, lon: -0.0012 },
-              { lat: 51.4765, lon: -0.0012 },
-              { lat: 51.4765, lon: -0.0018 }
-            ]
           }
         ]
       },
-      // Way 501 also present in elements stream (standard Overpass output)
+      // Way 501 also present as standalone way element
       {
         type: 'way',
         id: 501,
@@ -323,21 +661,56 @@ describe('M2.0.1 OSM Overpass Multipolygon Relations & Truncation', () => {
 
     try {
       const res = await provider.fetch({ latitude: 51.4769, longitude: -0.0015 });
-
       expect(res.status).toBe('success');
-      // Way 501 was deduplicated because it is a member of relation 9901!
       expect(res.data?.buildingCount).toBe(1);
       expect(res.data?.diagnostics.deduplicatedWaysCount).toBe(1);
-      expect(res.data?.diagnostics.relationsProcessed).toBe(1);
+      // Feature collection has only the relation, not the redundant member way
+      expect(res.featureCollection?.features.length).toBe(1);
+      expect(res.featureCollection?.features[0].id).toBe('osm-relation-9901');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 
-      const relFeature = res.featureCollection?.features.find(f => f.id === 'osm-relation-9901');
-      expect(relFeature).toBeDefined();
-      expect(relFeature?.geometry.type).toBe('Polygon');
-      // Polygon has 2 rings: 1 outer ring, 1 inner hole
-      expect((relFeature?.geometry as any).coordinates.length).toBe(2);
-      expect(relFeature?.properties?.name).toBe('Academic Quadrangle');
-      expect(relFeature?.properties?.isMultipolygon).toBe(true);
-      expect(relFeature?.properties?.holeCount).toBe(1);
+  it('10. detects and rejects invalid or degenerate rings with fewer than 3 distinct vertices', () => {
+    // Degenerate line back-and-forth (only 2 distinct vertices)
+    const degenerateLine: [number, number][] = [[0, 0], [5, 5], [0, 0]];
+    // Single-point segment
+    const singlePoint: [number, number][] = [[0, 0]];
+
+    const result = reconstructClosedRingsFromFragments([degenerateLine, singlePoint]);
+    expect(result.closedRings.length).toBe(0);
+    expect(result.invalidRingsCount).toBe(2);
+  });
+
+  it('11. gracefully handles relation with missing or unsupported members without crash', async () => {
+    const provider = new OSMDataProvider();
+    const mockElements = [
+      {
+        type: 'relation',
+        id: 9999,
+        tags: { type: 'multipolygon', building: 'yes' },
+        members: [
+          // Missing geometry
+          { type: 'way', ref: 801, role: 'outer' },
+          // Node member (not a way)
+          { type: 'node', ref: 901, role: 'admin_centre', lat: 51.476, lon: -0.002 }
+        ]
+      }
+    ];
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ elements: mockElements })
+    } as any);
+
+    try {
+      const res = await provider.fetch({ latitude: 51.4769, longitude: -0.0015 });
+      expect(res.status).toBe('empty');
+      expect(res.data?.diagnostics.incompleteRelationsCount).toBe(1);
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -375,7 +748,7 @@ describe('M2.0.1 OSM Overpass Multipolygon Relations & Truncation', () => {
   });
 });
 
-describe('M2.0.1 Weather & Elevation Provenance Disclosures', () => {
+describe('M2.0.2 Weather & Elevation Provenance Disclosures', () => {
   it('does not use geographic region inference and discloses variable model grid resolution', async () => {
     const provider = new OpenMeteoWeatherProvider();
     const originalFetch = globalThis.fetch;
@@ -407,7 +780,7 @@ describe('M2.0.1 Weather & Elevation Provenance Disclosures', () => {
     }
   });
 
-  it('documents multi-source DEM compilation and EGM96 geoid without falsely claiming 90m certified reading', async () => {
+  it('documents multi-source DEM compilation and EGM96 geoid without falsely claiming 90m certified reading or Copernicus model', async () => {
     const provider = new ElevationDataProvider();
     const originalFetch = globalThis.fetch;
 
@@ -426,6 +799,9 @@ describe('M2.0.1 Weather & Elevation Provenance Disclosures', () => {
       const res = await provider.fetch({ latitude: 51.4769, longitude: -0.0015 });
       expect(res.status).toBe('success');
       expect(res.data?.elevationM).toBe(48.5);
+      // Strictly verify no fabricated model or resolution is claimed
+      expect(res.data?.model).toBeNull();
+      expect(res.data?.resolutionM).toBeNull();
       expect(res.metadata.crs).toBe('EPSG:4326 horizontal, EGM96 geoid vertical');
       expect(res.metadata.source).toContain('Open-Meteo Elevation API (Multi-Source Global DEM Compilation');
     } finally {

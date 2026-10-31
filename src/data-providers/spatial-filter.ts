@@ -1,7 +1,7 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * SiteLens Geospatial Site Intelligence Workstation - Robust Spatial Filtering & Geometry Intersection (M2.0.1)
+ * SiteLens Geospatial Site Intelligence Workstation - Robust Spatial Filtering & Geometry Intersection (M2.0.2)
  */
 
 import { BoundingBox } from './types';
@@ -38,7 +38,7 @@ function ccw(p1: [number, number], p2: [number, number], p3: [number, number]): 
 }
 
 /**
- * Tests if point p lies on segment ab
+ * Tests if point p lies on segment ab (with tolerance)
  */
 function onSegment(p: [number, number], a: [number, number], b: [number, number]): boolean {
   return (
@@ -103,8 +103,10 @@ export function isLineCrossingRing(
 /**
  * Robust Polygon-to-Boundary Intersection:
  * 1. Polygon vertex inside boundary.
- * 2. Boundary vertex inside polygon outer ring (and not within holes).
- * 3. Any polygon edge crosses any boundary edge.
+ * 2. Boundary edge crosses outer ring.
+ * 3. Boundary edge crosses any hole ring.
+ * 4. Hole vertex inside boundary (hole mass intersects site).
+ * 5. Boundary inside outer ring (enclosure), unless boundary is entirely enclosed in an interior hole.
  */
 export function polygonIntersectsBoundary(
   polygonCoords: [number, number][][], // [outerRing, ...innerRings]
@@ -118,27 +120,40 @@ export function polygonIntersectsBoundary(
     return true;
   }
 
-  // 2. Any boundary vertex inside polygon outer ring (enclosing polygon)
-  const boundaryPointsInsideOuter = boundaryRing.filter(pt => isPointInPolygon(pt, outerRing));
-  if (boundaryPointsInsideOuter.length > 0) {
-    const innerRings = polygonCoords.slice(1);
-    // If boundary is entirely inside a hole (e.g. courtyard), it does not intersect the building mass
-    const isEntirelyInHole = innerRings.some(hole => 
-      boundaryPointsInsideOuter.every(pt => isPointInPolygon(pt, hole))
-    );
-    if (!isEntirelyInHole) {
-      return true;
-    }
-  }
-
-  // 3. Edges intersect
+  // 2. Any outer edge crosses boundary
   if (isLineCrossingRing(outerRing, boundaryRing)) {
     return true;
   }
 
-  // 4. Edges of holes intersect boundary
-  for (const innerRing of polygonCoords.slice(1)) {
-    if (isLineCrossingRing(boundaryRing, innerRing)) {
+  const innerRings = polygonCoords.slice(1);
+
+  // 3. Any boundary edge crosses any hole ring
+  for (const hole of innerRings) {
+    if (isLineCrossingRing(boundaryRing, hole)) {
+      return true;
+    }
+  }
+
+  // 4. Any hole vertex inside boundary
+  for (const hole of innerRings) {
+    if (hole.some(pt => isPointInPolygon(pt, boundaryRing))) {
+      return true;
+    }
+  }
+
+  // 5. Boundary inside outer ring (enclosing polygon)
+  const boundaryPointsInsideOuter = boundaryRing.filter(pt => isPointInPolygon(pt, outerRing));
+  if (boundaryPointsInsideOuter.length > 0) {
+    if (innerRings.length === 0) {
+      return true;
+    }
+
+    // If every boundary point is inside one specific hole and no edges cross, it sits in the courtyard void
+    const isEntirelyInHole = innerRings.some(hole => 
+      boundaryRing.every(pt => isPointInPolygon(pt, hole))
+    );
+
+    if (!isEntirelyInHole) {
       return true;
     }
   }
@@ -160,37 +175,76 @@ export function isBBoxIntersecting(bbox1: BoundingBox, bbox2: BoundingBox): bool
 }
 
 /**
- * Detects if a coordinate set crosses the 180th meridian (Antimeridian)
+ * Sequence-aware antimeridian detection for a single ring or LineString.
+ * Detects if adjacent coordinates jump by > 180 degrees.
  */
-export function hasAntimeridianCrossing(coords: any): boolean {
-  let prevLng: number | null = null;
-  let crossed = false;
-
-  function walk(c: any) {
-    if (crossed) return;
-    if (typeof c[0] === 'number') {
-      const lng = c[0];
-      if (prevLng !== null) {
-        if (Math.abs(lng - prevLng) > 180) {
-          crossed = true;
-          return;
-        }
-      }
-      prevLng = lng;
-    } else if (Array.isArray(c)) {
-      for (const item of c) walk(item);
+export function ringCrossesAntimeridian(coords: [number, number][]): boolean {
+  if (!coords || coords.length < 2) return false;
+  for (let i = 1; i < coords.length; i++) {
+    if (Math.abs(coords[i][0] - coords[i - 1][0]) > 180) {
+      return true;
     }
   }
-
-  walk(coords);
-  return crossed;
+  return false;
 }
 
 /**
- * Unwraps longitudes across the antimeridian into continuous domain [0, 360)
+ * Detects if any ring in a geometry crosses the antimeridian
  */
-export function unwrapAntimeridianCoords(coords: [number, number][]): [number, number][] {
-  return coords.map(([lng, lat]) => [lng < 0 ? lng + 360 : lng, lat]);
+export function hasAntimeridianCrossing(coords: any): boolean {
+  if (!coords || !Array.isArray(coords) || coords.length === 0) return false;
+
+  // Single ring / LineString
+  if (typeof coords[0]?.[0] === 'number') {
+    return ringCrossesAntimeridian(coords as [number, number][]);
+  }
+
+  // Array of rings or array of polygons
+  return coords.some((sub: any) => hasAntimeridianCrossing(sub));
+}
+
+/**
+ * Sequence-aware antimeridian unwrapping for a single ring or LineString.
+ * Compares each point to its immediate predecessor.
+ * Normalizes jumps greater than 180 degrees without sharing state across rings.
+ * Never mutates input coordinates.
+ */
+export function unwrapRingAntimeridian(coords: [number, number][]): [number, number][] {
+  if (!coords || coords.length === 0) return [];
+  const result: [number, number][] = [[coords[0][0], coords[0][1]]];
+  let offset = 0;
+
+  for (let i = 1; i < coords.length; i++) {
+    const prevLng = result[i - 1][0];
+    let curLng = coords[i][0] + offset;
+    const diff = curLng - prevLng;
+
+    if (diff > 180) {
+      offset -= 360;
+      curLng -= 360;
+    } else if (diff < -180) {
+      offset += 360;
+      curLng += 360;
+    }
+
+    result.push([curLng, coords[i][1]]);
+  }
+
+  return result;
+}
+
+/**
+ * Aligns a ring's average longitude with a reference longitude within [-180, +180]
+ */
+function alignRingToRef(ring: [number, number][], refLng: number): [number, number][] {
+  if (ring.length === 0) return ring;
+  const avgLng = ring.reduce((s, p) => s + p[0], 0) / ring.length;
+  let shift = 0;
+  if (avgLng - refLng > 180) shift = -360;
+  else if (avgLng - refLng < -180) shift = 360;
+
+  if (shift === 0) return ring;
+  return ring.map(p => [p[0] + shift, p[1]]);
 }
 
 /**
@@ -254,8 +308,8 @@ export function computeRingBBox(ring: [number, number][]): BoundingBox {
  * - Points: Ray-casting containment
  * - LineStrings: Vertex inside OR line crossing boundary ring
  * - Polygons: Vertex inside OR boundary inside polygon (enclosure) OR edges crossing, respecting holes
- * - MultiPolygons: Disjoint polygon components evaluated
- * - Antimeridian: Detects crossing and safely unwraps coordinates
+ * - MultiPolygons: Disjoint polygon components evaluated independently
+ * - Antimeridian: Sequence-aware unwrapping per ring without cross-ring state pollution
  */
 export function filterFeaturesBySiteBoundary(
   features: Feature[],
@@ -263,20 +317,22 @@ export function filterFeaturesBySiteBoundary(
 ): Feature[] {
   if (!boundaryRing || boundaryRing.length < 3) return features;
 
-  const boundaryCrossesAntimeridian = hasAntimeridianCrossing(boundaryRing);
-  const effectiveBoundaryRing = boundaryCrossesAntimeridian 
-    ? unwrapAntimeridianCoords(boundaryRing) 
+  const boundaryCrosses = ringCrossesAntimeridian(boundaryRing);
+  const effectiveBoundaryRing = boundaryCrosses 
+    ? unwrapRingAntimeridian(boundaryRing) 
     : boundaryRing;
   const boundaryBBox = computeRingBBox(effectiveBoundaryRing);
+  const boundaryCenterLng = (boundaryBBox[0] + boundaryBBox[2]) / 2;
 
   return features.filter(feature => {
     if (!feature.geometry) return false;
 
     const geom = feature.geometry;
-    const geomCrossesAntimeridian = hasAntimeridianCrossing(geom);
+    const geomCoords = 'coordinates' in geom ? (geom as any).coordinates : null;
+    const geomCrosses = geomCoords ? hasAntimeridianCrossing(geomCoords) : false;
 
-    // Fast check: BBox intersection (skip if antimeridian handling applies)
-    if (!boundaryCrossesAntimeridian && !geomCrossesAntimeridian) {
+    // Fast BBox rejection when antimeridian handling is not active
+    if (!boundaryCrosses && !geomCrosses) {
       const featBBox = computeGeometryBBox(geom);
       if (!featBBox || !isBBoxIntersecting(boundaryBBox, featBBox)) {
         return false;
@@ -285,21 +341,23 @@ export function filterFeaturesBySiteBoundary(
 
     // 1. Point
     if (geom.type === 'Point') {
-      let pt = geom.coordinates as [number, number];
-      if (boundaryCrossesAntimeridian && pt[0] < 0) pt = [pt[0] + 360, pt[1]];
+      let pt: [number, number] = [geom.coordinates[0], geom.coordinates[1]];
+      if (boundaryCrosses) {
+        if (pt[0] - boundaryCenterLng > 180) pt = [pt[0] - 360, pt[1]];
+        else if (pt[0] - boundaryCenterLng < -180) pt = [pt[0] + 360, pt[1]];
+      }
       return isPointInPolygon(pt, effectiveBoundaryRing);
     }
 
     // 2. LineString
     if (geom.type === 'LineString') {
       let coords = geom.coordinates as [number, number][];
-      if (boundaryCrossesAntimeridian) coords = unwrapAntimeridianCoords(coords);
+      coords = unwrapRingAntimeridian(coords);
+      coords = alignRingToRef(coords, boundaryCenterLng);
 
-      // Check vertex containment
       if (coords.some(pt => isPointInPolygon(pt, effectiveBoundaryRing))) {
         return true;
       }
-      // Check segment-segment crossing
       return isLineCrossingRing(coords, effectiveBoundaryRing);
     }
 
@@ -307,8 +365,8 @@ export function filterFeaturesBySiteBoundary(
     if (geom.type === 'MultiLineString') {
       const lines = geom.coordinates as [number, number][][];
       return lines.some(line => {
-        let coords = line;
-        if (boundaryCrossesAntimeridian) coords = unwrapAntimeridianCoords(coords);
+        let coords = unwrapRingAntimeridian(line);
+        coords = alignRingToRef(coords, boundaryCenterLng);
         return coords.some(pt => isPointInPolygon(pt, effectiveBoundaryRing)) ||
           isLineCrossingRing(coords, effectiveBoundaryRing);
       });
@@ -316,22 +374,23 @@ export function filterFeaturesBySiteBoundary(
 
     // 4. Polygon
     if (geom.type === 'Polygon') {
-      let polyCoords = geom.coordinates as [number, number][][];
-      if (boundaryCrossesAntimeridian) {
-        polyCoords = polyCoords.map(ring => unwrapAntimeridianCoords(ring));
-      }
-      return polygonIntersectsBoundary(polyCoords, effectiveBoundaryRing);
+      const rings = geom.coordinates as [number, number][][];
+      const normalizedRings = rings.map(ring => {
+        const unwrapped = unwrapRingAntimeridian(ring);
+        return alignRingToRef(unwrapped, boundaryCenterLng);
+      });
+      return polygonIntersectsBoundary(normalizedRings, effectiveBoundaryRing);
     }
 
     // 5. MultiPolygon
     if (geom.type === 'MultiPolygon') {
       const multiPolys = geom.coordinates as [number, number][][][];
       return multiPolys.some(poly => {
-        let polyCoords = poly;
-        if (boundaryCrossesAntimeridian) {
-          polyCoords = polyCoords.map(ring => unwrapAntimeridianCoords(ring));
-        }
-        return polygonIntersectsBoundary(polyCoords, effectiveBoundaryRing);
+        const normalizedRings = poly.map(ring => {
+          const unwrapped = unwrapRingAntimeridian(ring);
+          return alignRingToRef(unwrapped, boundaryCenterLng);
+        });
+        return polygonIntersectsBoundary(normalizedRings, effectiveBoundaryRing);
       });
     }
 

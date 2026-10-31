@@ -1,12 +1,12 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * SiteLens Geospatial Site Intelligence Workstation - OpenStreetMap Overpass Provider (M2.0.1)
+ * SiteLens Geospatial Site Intelligence Workstation - OpenStreetMap Overpass Provider (M2.0.2)
  */
 
 import { IDataProvider, SpatialDataset, SpatialQueryOptions, DatasetMetadata, DatasetStatus } from '../types';
 import { resilientFetch } from '../client';
-import { filterFeaturesBySiteBoundary } from '../spatial-filter';
+import { filterFeaturesBySiteBoundary, isPointInPolygon } from '../spatial-filter';
 import type { Feature, Geometry } from 'geojson';
 
 export interface OSMQuery {
@@ -14,6 +14,15 @@ export interface OSMQuery {
   longitude: number;
   radiusMeters?: number;
   bbox?: [number, number, number, number]; // [minLng, minLat, maxLng, maxLat]
+}
+
+export interface OSMDiagnostics {
+  relationsProcessed: number;
+  relationsReconstructed: number;
+  incompleteRelationsCount: number;
+  invalidRingsCount: number;
+  unassignedInnerRingsCount: number;
+  deduplicatedWaysCount: number;
 }
 
 export interface OSMUrbanSummaryData {
@@ -34,11 +43,7 @@ export interface OSMUrbanSummaryData {
     type?: string;
     osmId: number;
   }[];
-  diagnostics: {
-    incompleteGeometriesCount: number;
-    relationsProcessed: number;
-    deduplicatedWaysCount: number;
-  };
+  diagnostics: OSMDiagnostics;
 }
 
 const OSM_METADATA: DatasetMetadata = {
@@ -76,24 +81,113 @@ const OVERPASS_ENDPOINTS = [
   'https://overpass.kumi.systems/api/interpreter'
 ];
 
-/**
- * Assembles closed rings from Overpass relation member ways
- */
-function assembleRingsFromMembers(members: any[], role: 'outer' | 'inner'): [number, number][][] {
-  const filtered = members.filter(m => m.role === role && Array.isArray(m.geometry) && m.geometry.length >= 2);
-  const rings: [number, number][][] = [];
+function coordEquals(p1: [number, number], p2: [number, number], tolerance: number = 1e-7): boolean {
+  return Math.abs(p1[0] - p2[0]) <= tolerance && Math.abs(p1[1] - p2[1]) <= tolerance;
+}
 
-  for (const item of filtered) {
-    const coords: [number, number][] = item.geometry.map((pt: any) => [pt.lon, pt.lat]);
-    if (coords.length >= 3) {
-      if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
-        coords.push([...coords[0]]);
+export interface ReconstructedRingsResult {
+  closedRings: [number, number][][];
+  incompleteFragmentsCount: number;
+  invalidRingsCount: number;
+}
+
+/**
+ * Reconstructs closed rings from member way fragments.
+ * Joins fragments by matching endpoints in either orientation, reverses fragments
+ * when necessary, validates distinct vertices, and detects open/incomplete chains
+ * without artificially forcing closure.
+ */
+export function reconstructClosedRingsFromFragments(
+  rawFragments: [number, number][][]
+): ReconstructedRingsResult {
+  const closedRings: [number, number][][] = [];
+  let invalidRingsCount = 0;
+  let incompleteFragmentsCount = 0;
+
+  // Clone fragments into active pool
+  const pool: [number, number][][] = [];
+  for (const frag of rawFragments) {
+    if (!frag || frag.length < 2) {
+      invalidRingsCount++;
+      continue;
+    }
+
+    // Check if fragment is already a closed ring
+    if (coordEquals(frag[0], frag[frag.length - 1])) {
+      const distinctCount = new Set(frag.map(p => `${p[0]},${p[1]}`)).size;
+      if (distinctCount >= 3) {
+        closedRings.push([...frag]);
+      } else {
+        invalidRingsCount++;
       }
-      rings.push(coords);
+    } else {
+      pool.push([...frag]);
     }
   }
 
-  return rings;
+  // Connect open fragments
+  while (pool.length > 0) {
+    const current = [...pool.shift()!];
+    let extended = true;
+
+    while (extended && !coordEquals(current[0], current[current.length - 1])) {
+      extended = false;
+      const head = current[0];
+      const tail = current[current.length - 1];
+
+      for (let i = 0; i < pool.length; i++) {
+        const candidate = pool[i];
+        const cHead = candidate[0];
+        const cTail = candidate[candidate.length - 1];
+
+        if (coordEquals(tail, cHead)) {
+          // Append candidate
+          current.push(...candidate.slice(1));
+          pool.splice(i, 1);
+          extended = true;
+          break;
+        } else if (coordEquals(tail, cTail)) {
+          // Reverse candidate and append
+          const reversed = [...candidate].reverse();
+          current.push(...reversed.slice(1));
+          pool.splice(i, 1);
+          extended = true;
+          break;
+        } else if (coordEquals(head, cTail)) {
+          // Prepend candidate
+          current.unshift(...candidate.slice(0, candidate.length - 1));
+          pool.splice(i, 1);
+          extended = true;
+          break;
+        } else if (coordEquals(head, cHead)) {
+          // Reverse candidate and prepend
+          const reversed = [...candidate].reverse();
+          current.unshift(...reversed.slice(0, reversed.length - 1));
+          pool.splice(i, 1);
+          extended = true;
+          break;
+        }
+      }
+    }
+
+    if (coordEquals(current[0], current[current.length - 1])) {
+      const distinctCount = new Set(current.map(p => `${p[0]},${p[1]}`)).size;
+      if (distinctCount >= 3) {
+        closedRings.push(current);
+      } else {
+        invalidRingsCount++;
+      }
+    } else {
+      // Unclosed chain: do NOT artificially close with a fake edge
+      incompleteFragmentsCount++;
+    }
+  }
+
+  return {
+    closedRings,
+    incompleteFragmentsCount,
+    invalidRingsCount
+  };
 }
 
 export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryData> {
@@ -175,6 +269,15 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
                         remark.includes('quota') ||
                         elements.length >= 150;
 
+    const diagnostics: OSMDiagnostics = {
+      relationsProcessed: 0,
+      relationsReconstructed: 0,
+      incompleteRelationsCount: 0,
+      invalidRingsCount: 0,
+      unassignedInnerRingsCount: 0,
+      deduplicatedWaysCount: 0
+    };
+
     if (elements.length === 0) {
       return {
         id: `osm-${lat.toFixed(4)}-${lng.toFixed(4)}`,
@@ -189,7 +292,7 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
           queriedTotals: { buildings: 0, roads: 0, amenities: 0, landuse: 0 },
           features: [],
           elementsSummary: [],
-          diagnostics: { incompleteGeometriesCount: 0, relationsProcessed: 0, deduplicatedWaysCount: 0 }
+          diagnostics
         },
         featureCollection: {
           type: 'FeatureCollection',
@@ -218,30 +321,72 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
 
     const rawFeatures: Feature[] = [];
     const summaryItems: OSMUrbanSummaryData['elementsSummary'] = [];
-    let incompleteCount = 0;
-    let relationsProcessed = 0;
-    let deduplicatedWaysCount = 0;
 
     let rawBuildingCount = 0;
     let rawRoadCount = 0;
     let rawAmenityCount = 0;
     let rawLanduseCount = 0;
 
-    // Pass 2: Process relations (Multipolygon buildings with holes)
+    // Pass 2: Reconstruct relations (Multipolygon buildings with fragmented ways and holes)
     for (const rel of relations) {
       const tags = rel.tags || {};
       const name = tags.name || tags['addr:housename'] || null;
 
       if (tags.building || tags.type === 'multipolygon') {
+        diagnostics.relationsProcessed++;
+
+        const members: any[] = Array.isArray(rel.members) ? rel.members : [];
+        const outerFragments: [number, number][][] = [];
+        const innerFragments: [number, number][][] = [];
+
+        for (const m of members) {
+          if (Array.isArray(m.geometry) && m.geometry.length >= 2) {
+            const coords: [number, number][] = m.geometry.map((pt: any) => [pt.lon, pt.lat]);
+            if (m.role === 'inner') {
+              innerFragments.push(coords);
+            } else {
+              // Default to outer if role is 'outer' or unspecified
+              outerFragments.push(coords);
+            }
+          }
+        }
+
+        const outerResult = reconstructClosedRingsFromFragments(outerFragments);
+        const innerResult = reconstructClosedRingsFromFragments(innerFragments);
+
+        diagnostics.invalidRingsCount += (outerResult.invalidRingsCount + innerResult.invalidRingsCount);
+
+        if (outerResult.closedRings.length === 0) {
+          diagnostics.incompleteRelationsCount++;
+          continue; // Incomplete relation: no valid outer ring could be formed
+        }
+
+        // Assign inner rings (holes) to their containing outer ring
+        const outerRingsWithHoles: { outer: [number, number][]; holes: [number, number][][] }[] = 
+          outerResult.closedRings.map(outer => ({ outer, holes: [] }));
+
+        for (const innerRing of innerResult.closedRings) {
+          let assigned = false;
+          // Check which outer ring contains this inner ring
+          for (const item of outerRingsWithHoles) {
+            if (isPointInPolygon(innerRing[0], item.outer)) {
+              item.holes.push(innerRing);
+              assigned = true;
+              break;
+            }
+          }
+          if (!assigned) {
+            diagnostics.unassignedInnerRingsCount++;
+          }
+        }
+
+        // Successfully reconstructed
+        diagnostics.relationsReconstructed++;
         rawBuildingCount++;
-        relationsProcessed++;
 
-        const outerRings = assembleRingsFromMembers(rel.members || [], 'outer');
-        const innerRings = assembleRingsFromMembers(rel.members || [], 'inner');
-
-        if (outerRings.length === 1) {
-          // Single outer polygon with 0 or more inner holes
-          const polyCoords = [outerRings[0], ...innerRings];
+        if (outerRingsWithHoles.length === 1) {
+          // Single outer polygon
+          const polyCoords = [outerRingsWithHoles[0].outer, ...outerRingsWithHoles[0].holes];
           rawFeatures.push({
             type: 'Feature',
             id: `osm-relation-${rel.id}`,
@@ -254,7 +399,7 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
               osmType: 'relation',
               featureType: 'building',
               isMultipolygon: true,
-              holeCount: innerRings.length,
+              holeCount: outerRingsWithHoles[0].holes.length,
               name: name || `Building Complex #${rel.id}`,
               buildingType: tags.building !== 'yes' ? (tags.building || 'multipolygon') : 'complex',
               height: tags.height ? parseFloat(tags.height) : undefined,
@@ -262,9 +407,9 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
               tags
             }
           });
-        } else if (outerRings.length > 1) {
+        } else {
           // Multiple outer polygons -> MultiPolygon
-          const multiPolyCoords = outerRings.map(outer => [outer]);
+          const multiPolyCoords = outerRingsWithHoles.map(item => [item.outer, ...item.holes]);
           rawFeatures.push({
             type: 'Feature',
             id: `osm-relation-${rel.id}`,
@@ -277,14 +422,12 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
               osmType: 'relation',
               featureType: 'building',
               isMultipolygon: true,
-              outerCount: outerRings.length,
+              outerCount: outerRingsWithHoles.length,
               name: name || `Building Multi-Complex #${rel.id}`,
               buildingType: tags.building || 'multipolygon',
               tags
             }
           });
-        } else {
-          incompleteCount++;
         }
 
         if (summaryItems.length < 50) {
@@ -308,7 +451,7 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
       if (tags.building) {
         // Feature deduplication: avoid adding way if already represented by parent relation
         if (relationMemberWayIds.has(el.id)) {
-          deduplicatedWaysCount++;
+          diagnostics.deduplicatedWaysCount++;
           continue;
         }
 
@@ -339,8 +482,6 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
               tags
             }
           });
-        } else {
-          incompleteCount++;
         }
 
         if (summaryItems.length < 50) {
@@ -373,8 +514,6 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
               tags
             }
           });
-        } else {
-          incompleteCount++;
         }
 
         if (summaryItems.length < 50) {
@@ -411,8 +550,6 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
               tags
             }
           });
-        } else {
-          incompleteCount++;
         }
 
         if (summaryItems.length < 50) {
@@ -433,8 +570,7 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
       ? filterFeaturesBySiteBoundary(rawFeatures, options.siteBoundary)
       : rawFeatures;
 
-    // Feature and count consistency:
-    // If filtered by site boundary, count the retained features directly
+    // Feature and count consistency
     const retainedBuildings = filteredFeatures.filter(f => f.properties?.featureType === 'building').length;
     const retainedRoads = filteredFeatures.filter(f => f.properties?.featureType === 'road').length;
     const retainedAmenities = filteredFeatures.filter(f => f.properties?.featureType === 'amenity').length;
@@ -471,11 +607,7 @@ export class OSMDataProvider implements IDataProvider<OSMQuery, OSMUrbanSummaryD
         },
         features: filteredFeatures,
         elementsSummary: summaryItems,
-        diagnostics: {
-          incompleteGeometriesCount: incompleteCount,
-          relationsProcessed,
-          deduplicatedWaysCount
-        }
+        diagnostics
       },
       featureCollection: {
         type: 'FeatureCollection',
