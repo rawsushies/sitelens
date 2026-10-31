@@ -1,32 +1,21 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * SiteLens Geospatial Site Intelligence Workstation - Project Manager Modal
+ * SiteLens Geospatial Site Intelligence Workstation - Project Manager Modal (Design System v1.1)
  */
 
 import React, { useState } from 'react';
 import { SiteProject } from '../types';
-import { 
-  FolderGit2, 
-  Plus, 
-  Trash2, 
-  Copy, 
-  Check, 
-  X, 
-  Calendar, 
-  Layers, 
-  MapPin, 
-  AlertCircle 
-} from 'lucide-react';
+import { FolderGit2, X, Plus, Calendar, Layers, MapPin, Trash2 } from 'lucide-react';
 
 interface ProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
   projects: SiteProject[];
   currentProjectId: string;
-  onSelectProject: (projectId: string) => void;
+  onSelectProject: (id: string) => void;
   onCreateProject: (name: string, description: string) => void;
-  onDeleteProject: (projectId: string) => void;
+  onDeleteProject: (id: string) => void;
 }
 
 export const ProjectModal: React.FC<ProjectModalProps> = ({
@@ -36,7 +25,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   currentProjectId,
   onSelectProject,
   onCreateProject,
-  onDeleteProject,
+  onDeleteProject
 }) => {
   const [isCreating, setIsCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -55,32 +44,33 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 select-none">
-      <div className="bg-[#0e1524] border border-[#233148] rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 select-none">
+      <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh] text-[var(--text-primary)]">
         {/* Modal Header */}
-        <div className="px-4 py-3 bg-[#0a0f19] border-b border-[#1f2b3e] flex items-center justify-between">
-          <div className="flex items-center gap-2 text-white font-mono font-medium text-sm">
-            <FolderGit2 className="w-4 h-4 text-[#a78bfa]" />
+        <div className="px-5 py-3.5 bg-[var(--bg-surface-secondary)] border-b border-[var(--border-subtle)] flex items-center justify-between">
+          <div className="flex items-center gap-2.5 font-display font-semibold text-sm text-[var(--text-primary)]">
+            <FolderGit2 className="w-4 h-4 text-[#7C5CFF]" />
             <span>Site Projects Workspace</span>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white p-1 rounded transition-colors"
+            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded transition-colors"
+            aria-label="Close modal"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="p-4 flex-1 overflow-y-auto space-y-4 text-xs">
+        <div className="p-5 flex-1 overflow-y-auto space-y-4 text-xs">
           {/* Action Bar */}
           <div className="flex items-center justify-between">
-            <span className="font-mono text-slate-400 text-[11px] uppercase">
-              Local IndexedDB Projects ({projects.length})
+            <span className="text-[var(--text-secondary)] text-[11px] font-medium uppercase tracking-wider">
+              Local Storage Projects ({projects.length})
             </span>
             <button
               onClick={() => setIsCreating(!isCreating)}
-              className="px-2.5 py-1.5 bg-[#8b5cf6] hover:bg-[#7c3aed] text-white font-medium rounded flex items-center gap-1.5 transition-colors font-mono"
+              className="px-3 py-1.5 bg-[#7C5CFF] hover:bg-[#6B47FC] text-white font-medium rounded flex items-center gap-1.5 transition-colors shadow-sm"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>New Site Project</span>
@@ -89,40 +79,40 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
 
           {/* Create Form */}
           {isCreating && (
-            <form onSubmit={handleCreate} className="p-3 bg-[#131b2b] border border-[#273854] rounded space-y-3">
-              <div className="font-medium text-slate-200">Initialize New Project</div>
+            <form onSubmit={handleCreate} className="p-4 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded space-y-3">
+              <div className="font-semibold text-[var(--text-primary)] text-sm">Initialize New Project</div>
               <div>
-                <label className="block text-[11px] text-slate-400 mb-1">Project Name *</label>
+                <label className="block text-[11px] text-[var(--text-secondary)] mb-1 font-medium">Project Name *</label>
                 <input
                   type="text"
                   required
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   placeholder="e.g. Hudson Yards Site Feasibility"
-                  className="w-full bg-[#0a0f19] border border-[#1f2b3e] focus:border-[#8b5cf6] px-2.5 py-1.5 rounded text-white outline-none"
+                  className="w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] focus:border-[#7C5CFF] px-3 py-1.5 rounded text-[var(--text-primary)] outline-none transition-colors"
                 />
               </div>
               <div>
-                <label className="block text-[11px] text-slate-400 mb-1">Description / Client Objective</label>
+                <label className="block text-[11px] text-[var(--text-secondary)] mb-1 font-medium">Description / Client Objective</label>
                 <input
                   type="text"
                   value={newDesc}
                   onChange={(e) => setNewDesc(e.target.value)}
                   placeholder="e.g. Masterplanning site boundary, solar shadow and walkability baseline"
-                  className="w-full bg-[#0a0f19] border border-[#1f2b3e] focus:border-[#8b5cf6] px-2.5 py-1.5 rounded text-white outline-none"
+                  className="w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] focus:border-[#7C5CFF] px-3 py-1.5 rounded text-[var(--text-primary)] outline-none transition-colors"
                 />
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button
                   type="button"
                   onClick={() => setIsCreating(false)}
-                  className="px-3 py-1 bg-[#1a2436] hover:bg-[#223047] text-slate-300 rounded"
+                  className="px-3 py-1.5 bg-[var(--bg-surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded font-medium transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-3 py-1 bg-[#8b5cf6] hover:bg-[#7c3aed] text-white font-medium rounded"
+                  className="px-3.5 py-1.5 bg-[#7C5CFF] hover:bg-[#6B47FC] text-white font-medium rounded transition-colors shadow-sm"
                 >
                   Create Project
                 </button>
@@ -131,7 +121,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
           )}
 
           {/* Project List */}
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             {projects.map((proj) => {
               const isCurrent = proj.id === currentProjectId;
               const isDeleting = deleteConfirmId === proj.id;
@@ -139,40 +129,43 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
               return (
                 <div
                   key={proj.id}
-                  className={`p-3 rounded border transition-colors ${
+                  className={`p-3.5 rounded border transition-colors ${
                     isCurrent
-                      ? 'bg-[#152033] border-[#8b5cf6]'
-                      : 'bg-[#101726] border-[#1f2b3e] hover:bg-[#141d2f]'
+                      ? 'bg-[var(--brand-subtle)] border-[#7C5CFF]'
+                      : 'bg-[var(--bg-surface-secondary)] border-[var(--border-subtle)] hover:bg-[var(--bg-surface-hover)]'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold text-sm text-slate-100 truncate">
+                        <span className="font-semibold text-sm text-[var(--text-primary)] truncate">
                           {proj.name}
                         </span>
                         {isCurrent && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-[#8b5cf6]/30 text-[#c4b5fd] border border-[#8b5cf6]/60">
-                            ACTIVE
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#7C5CFF]">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#7C5CFF]" aria-hidden="true" />
+                            Active
                           </span>
                         )}
                       </div>
 
                       {proj.description && (
-                        <p className="text-slate-400 text-xs mt-0.5 line-clamp-1">
+                        <p className="text-[var(--text-secondary)] text-xs mt-1 line-clamp-1">
                           {proj.description}
                         </p>
                       )}
 
-                      <div className="flex items-center gap-3 mt-2 text-[10px] font-mono text-slate-500">
+                      <div className="flex items-center gap-3 mt-2.5 text-[11px] text-[var(--text-muted)] tabular-nums">
                         <span className="flex items-center gap-1">
-                          <Layers className="w-3 h-3 text-[#a78bfa]" />
+                          <Layers className="w-3 h-3 text-[#7C5CFF]" />
                           {proj.features.length} Features
                         </span>
+                        <span>·</span>
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
                           {new Date(proj.updatedAt).toLocaleDateString()}
                         </span>
+                        <span>·</span>
                         <span className="flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
                           {proj.center[1].toFixed(3)}°N, {proj.center[0].toFixed(3)}°E
@@ -181,14 +174,14 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0">
                       {!isCurrent && (
                         <button
                           onClick={() => {
                             onSelectProject(proj.id);
                             onClose();
                           }}
-                          className="px-2.5 py-1 bg-[#1c283e] hover:bg-[#283854] text-slate-200 rounded font-medium transition-colors"
+                          className="px-3 py-1 bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-hover)] border border-[var(--border-subtle)] text-[var(--text-primary)] rounded font-medium transition-colors"
                         >
                           Switch
                         </button>
@@ -196,20 +189,20 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
 
                       {projects.length > 1 && (
                         isDeleting ? (
-                          <div className="flex items-center gap-1 bg-rose-950/70 p-1 rounded border border-rose-800">
-                            <span className="text-[10px] text-rose-300 font-mono">Confirm?</span>
+                          <div className="flex items-center gap-1.5 bg-rose-500/10 p-1 rounded border border-rose-500/30">
+                            <span className="text-[10px] text-rose-600 dark:text-rose-400 font-medium">Delete?</span>
                             <button
                               onClick={() => {
                                 onDeleteProject(proj.id);
                                 setDeleteConfirmId(null);
                               }}
-                              className="px-1.5 py-0.5 bg-rose-600 hover:bg-rose-500 text-white rounded text-[10px] font-bold"
+                              className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-semibold transition-colors"
                             >
                               Yes
                             </button>
                             <button
                               onClick={() => setDeleteConfirmId(null)}
-                              className="px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded text-[10px]"
+                              className="px-2 py-0.5 bg-[var(--bg-surface-hover)] text-[var(--text-secondary)] rounded text-[10px] transition-colors"
                             >
                               No
                             </button>
@@ -217,8 +210,9 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                         ) : (
                           <button
                             onClick={() => setDeleteConfirmId(proj.id)}
-                            className="p-1.5 text-slate-500 hover:text-rose-400 rounded transition-colors"
+                            className="p-1.5 text-[var(--text-muted)] hover:text-rose-500 rounded transition-colors"
                             title="Delete project"
+                            aria-label="Delete project"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -233,11 +227,11 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="px-4 py-2.5 bg-[#0a0f19] border-t border-[#1f2b3e] flex items-center justify-between text-[11px] font-mono text-slate-500">
-          <span>All changes persist automatically in browser IndexedDB</span>
+        <div className="px-5 py-3 bg-[var(--bg-surface-secondary)] border-t border-[var(--border-subtle)] flex items-center justify-between text-[11px] text-[var(--text-muted)]">
+          <span>All changes persist automatically in browser storage</span>
           <button
             onClick={onClose}
-            className="px-3 py-1 bg-[#1a2538] hover:bg-[#24334b] text-slate-300 rounded transition-colors"
+            className="px-3 py-1.5 bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-hover)] border border-[var(--border-subtle)] text-[var(--text-primary)] rounded font-medium transition-colors"
           >
             Close
           </button>

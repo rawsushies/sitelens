@@ -366,6 +366,48 @@ describe('M2.0.1 Robust Spatial Filtering & Geometry Intersection', () => {
     expect(ring1[1][0]).toBe(181.0);
     expect(ring2[0][0]).toBe(10.0);
     expect(ring2[1][0]).toBe(11.0);
+
+    // Exact +180 and -180 coordinates
+    const exactMeridian: [number, number][] = [[180.0, 0.0], [-180.0, 0.0]];
+    const unwrappedExact = unwrapRingAntimeridian(exactMeridian);
+    expect(unwrappedExact[0]).toEqual([180.0, 0.0]);
+    expect(unwrappedExact[1][0]).toBe(180.0);
+  });
+
+  it('guarantees original GeoJSON coordinates remain unchanged during spatial filtering (immutability)', () => {
+    const originalCoords: [number, number][] = [[5, -5], [5, 15]];
+    const lineFeature: Feature = {
+      type: 'Feature',
+      id: 'immutable-line',
+      geometry: {
+        type: 'LineString',
+        coordinates: originalCoords
+      },
+      properties: {}
+    };
+
+    filterFeaturesBySiteBoundary([lineFeature], siteSquare);
+
+    // Ensure coords array reference or inner points were not mutated
+    expect((lineFeature.geometry as any).coordinates[0]).toEqual([5, -5]);
+    expect((lineFeature.geometry as any).coordinates[1]).toEqual([5, 15]);
+  });
+
+  it('retains features whose boundary touches the site boundary edge', () => {
+    // Polygon touching exactly at edge [10, 0] to [10, 10]
+    const touchingPolygon: Feature = {
+      type: 'Feature',
+      id: 'touching-parcel',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[10, 0], [20, 0], [20, 10], [10, 10], [10, 0]]]
+      },
+      properties: { name: 'Adjacent Parcel' }
+    };
+
+    const filtered = filterFeaturesBySiteBoundary([touchingPolygon], siteSquare);
+    expect(filtered.length).toBe(1);
+    expect(filtered[0].id).toBe('touching-parcel');
   });
 });
 
@@ -714,6 +756,35 @@ describe('M2.0.2 OSM Overpass Multipolygon Relations & Ring Reconstruction (11 R
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  it('12. reconstructs an inner courtyard hole composed of multiple fragmented ways', () => {
+    // 4 fragments forming an inner courtyard hole inside an outer perimeter
+    const h1: [number, number][] = [[2, 2], [8, 2]];
+    const h2: [number, number][] = [[8, 2], [8, 8]];
+    const h3: [number, number][] = [[8, 8], [2, 8]];
+    const h4: [number, number][] = [[2, 8], [2, 2]];
+
+    const result = reconstructClosedRingsFromFragments([h1, h2, h3, h4]);
+    expect(result.closedRings.length).toBe(1);
+    expect(result.closedRings[0].length).toBe(5);
+    expect(result.incompleteFragmentsCount).toBe(0);
+    expect(result.invalidRingsCount).toBe(0);
+  });
+
+  it('13. handles complex shuffled fragments with reversed directions without artificial edges', () => {
+    // Shuffled segments of a hexagon
+    const s1: [number, number][] = [[0, 0], [4, 0]];
+    const s2: [number, number][] = [[6, 3], [4, 0]]; // reversed
+    const s3: [number, number][] = [[6, 3], [4, 6]];
+    const s4: [number, number][] = [[0, 6], [4, 6]]; // reversed
+    const s5: [number, number][] = [[0, 6], [-2, 3]];
+    const s6: [number, number][] = [[0, 0], [-2, 3]]; // reversed
+
+    const result = reconstructClosedRingsFromFragments([s3, s1, s6, s2, s5, s4]);
+    expect(result.closedRings.length).toBe(1);
+    expect(result.closedRings[0].length).toBe(7);
+    expect(result.incompleteFragmentsCount).toBe(0);
   });
 
   it('detects Overpass server truncation remark and marks dataset as partial', async () => {

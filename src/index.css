@@ -2,23 +2,70 @@
 @import "maplibre-gl/dist/maplibre-gl.css";
 
 @layer base {
-  :root {
-    --bg-workspace: #0b0f17;
-    --bg-surface: #111827;
-    --bg-panel: #161e2e;
-    --bg-element: #1f293d;
-    --border-subtle: #253248;
-    --border-strong: #374763;
-    --text-primary: #f1f5f9;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
-    --accent: #8b5cf6;
-    --accent-hover: #7c3aed;
-    --accent-dim: rgba(139, 92, 246, 0.15);
-    --accent-emerald: #10b981;
-    --accent-amber: #f59e0b;
-    --accent-cyan: #06b6d4;
-    --accent-rose: #f43f5e;
+  /* Default: Dark Architectural GIS Workspace */
+  :root, :root[data-theme="dark"] {
+    --bg-workspace: #0A0E17;
+    --bg-surface: #101726;
+    --bg-surface-elevated: #162032;
+    --bg-surface-secondary: #131B2A;
+    --bg-surface-hover: #1B273E;
+    --border-subtle: #1E293B;
+    --border-strong: #334155;
+    --text-primary: #F8FAFC;
+    --text-secondary: #94A3B8;
+    --text-muted: #64748B;
+    
+    /* Brand Geo Purple */
+    --brand-primary: #7C5CFF;
+    --brand-hover: #6B47FC;
+    --brand-active: #5A35EB;
+    --brand-subtle: rgba(124, 92, 255, 0.12);
+    --brand-border: rgba(124, 92, 255, 0.35);
+
+    /* Status Colors */
+    --status-success: #10B981;
+    --status-warning: #F59E0B;
+    --status-danger: #EF4444;
+    --status-info: #3B82F6;
+
+    /* Map Controls */
+    --map-ctrl-bg: rgba(10, 14, 23, 0.90);
+    --map-ctrl-border: #1E293B;
+    --map-ctrl-text: #94A3B8;
+    --map-ctrl-link: #7C5CFF;
+  }
+
+  /* Light Architectural Workspace Mode */
+  :root[data-theme="light"] {
+    --bg-workspace: #F1F5F9;
+    --bg-surface: #FFFFFF;
+    --bg-surface-elevated: #F8FAFC;
+    --bg-surface-secondary: #F1F5F9;
+    --bg-surface-hover: #E2E8F0;
+    --border-subtle: #E2E8F0;
+    --border-strong: #CBD5E1;
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-muted: #94A3B8;
+    
+    /* Brand Geo Purple */
+    --brand-primary: #7C5CFF;
+    --brand-hover: #6B47FC;
+    --brand-active: #5A35EB;
+    --brand-subtle: rgba(124, 92, 255, 0.10);
+    --brand-border: rgba(124, 92, 255, 0.30);
+
+    /* Status Colors */
+    --status-success: #059669;
+    --status-warning: #D97706;
+    --status-danger: #DC2626;
+    --status-info: #2563EB;
+
+    /* Map Controls */
+    --map-ctrl-bg: rgba(255, 255, 255, 0.92);
+    --map-ctrl-border: #CBD5E1;
+    --map-ctrl-text: #475569;
+    --map-ctrl-link: #7C5CFF;
   }
 
   body {
@@ -30,42 +77,57 @@
     overflow: hidden;
     user-select: none;
     -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    transition: background-color 150ms ease, color 150ms ease;
   }
 
+  /* Sans-serif everywhere - no monospace in UI; numbers use tabular alignment */
   code, pre, .font-mono {
-    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    font-feature-settings: 'tnum' 1, 'cv02' 1, 'cv03' 1, 'cv04' 1 !important;
+  }
+
+  .font-display {
+    font-family: 'Manrope', 'Inter', -apple-system, sans-serif;
+  }
+
+  .tabular-nums {
+    font-feature-settings: 'tnum' 1;
+    font-variant-numeric: tabular-nums;
   }
 }
 
-/* Custom technical scrollbar */
+/* Minimal Architectural Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #27354f;
-  border-radius: 3px;
+  background: var(--border-strong);
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3b4d6e;
+  background: var(--text-muted);
 }
 
-/* MapLibre dark theme overrides */
+/* MapLibre Controls - Architectural Sans-Serif Typography */
 .maplibregl-ctrl-attrib {
-  background-color: rgba(15, 23, 42, 0.85) !important;
-  color: #94a3b8 !important;
-  font-family: 'JetBrains Mono', monospace !important;
+  background-color: var(--map-ctrl-bg) !important;
+  color: var(--map-ctrl-text) !important;
+  font-family: 'Inter', -apple-system, sans-serif !important;
   font-size: 10px !important;
-  padding: 2px 8px !important;
-  border-radius: 2px !important;
-  border: 1px solid rgba(51, 65, 85, 0.5) !important;
+  font-weight: 400 !important;
+  padding: 3px 8px !important;
+  border-radius: 4px !important;
+  border: 1px solid var(--map-ctrl-border) !important;
+  backdrop-filter: blur(8px);
 }
 
 .maplibregl-ctrl-attrib a {
-  color: #a78bfa !important;
+  color: var(--map-ctrl-link) !important;
   text-decoration: none !important;
 }
 
@@ -74,12 +136,13 @@
 }
 
 .maplibregl-ctrl-scale {
-  background-color: rgba(15, 23, 42, 0.85) !important;
-  border: 1px solid #475569 !important;
+  background-color: var(--map-ctrl-bg) !important;
+  border: 1px solid var(--map-ctrl-border) !important;
   border-top: none !important;
-  color: #cbd5e1 !important;
-  font-family: 'JetBrains Mono', monospace !important;
+  color: var(--text-secondary) !important;
+  font-family: 'Inter', -apple-system, sans-serif !important;
   font-size: 10px !important;
-  font-weight: 600 !important;
+  font-weight: 500 !important;
   padding: 0 4px !important;
+  backdrop-filter: blur(8px);
 }

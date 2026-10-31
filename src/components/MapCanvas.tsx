@@ -128,9 +128,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         id: `boundary-${Date.now()}`,
         name: `Site Boundary ${curProj.features.filter(f => f.properties.featureType === 'site_boundary').length + 1}`,
         featureType: 'site_boundary',
-        color: '#8b5cf6',
-        strokeColor: '#a78bfa',
-        fillOpacity: 0.25,
+        color: '#7C5CFF',
+        strokeColor: '#7C5CFF',
+        fillOpacity: 0.22,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         metrics: {}
@@ -483,13 +483,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       {/* SVG Interactive Geometry & Drawing Overlay */}
       <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
-        <defs>
-          <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
-            <feComposite in="SourceGraphic" in2="blur" operator="over" />
-          </filter>
-        </defs>
-
         {/* 1. Render Existing Features */}
         {project.features.map((feature) => {
           const isSelected = feature.id === project.activeFeatureId;
@@ -584,7 +577,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                 <circle r={4} fill="#22d3ee" />
                 <circle r={14} fill="none" stroke="#22d3ee" strokeWidth={1} strokeDasharray="2,2" opacity={0.6} />
                 {isSelected && (
-                  <text y={-16} textAnchor="middle" fill="#67e8f9" fontSize={10} fontFamily="JetBrains Mono">
+                  <text y={-16} textAnchor="middle" fill="#67e8f9" fontSize={10} fontFamily="Inter, sans-serif" fontWeight="500">
                     {feature.properties.name}
                   </text>
                 )}
@@ -620,7 +613,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         >
                           <circle cx={pt1.x} cy={pt1.y} r={7} fill="#1e1b4b" stroke="#a78bfa" strokeWidth={2} />
                           <circle cx={pt1.x} cy={pt1.y} r={3} fill="#ffffff" />
-                          <text cx={pt1.x + 8} cy={pt1.y - 8} fill="#c4b5fd" fontSize={9} fontFamily="JetBrains Mono">
+                          <text cx={pt1.x + 8} cy={pt1.y - 8} fill="#c4b5fd" fontSize={9} fontFamily="Inter, sans-serif" fontWeight="600">
                             {i + 1}
                           </text>
                         </g>
@@ -675,7 +668,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                         >
                           <circle cx={pt.x} cy={pt.y} r={7} fill="#0c4a6e" stroke="#38bdf8" strokeWidth={2} />
                           <circle cx={pt.x} cy={pt.y} r={3} fill="#ffffff" />
-                          <text cx={pt.x + 8} cy={pt.y - 8} fill="#7dd3fc" fontSize={9} fontFamily="JetBrains Mono">
+                          <text cx={pt.x + 8} cy={pt.y - 8} fill="#7dd3fc" fontSize={9} fontFamily="Inter, sans-serif" fontWeight="600">
                             {i + 1}
                           </text>
                         </g>
@@ -774,10 +767,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                             x={pt.x}
                             y={pt.y - 18}
                             textAnchor="middle"
-                            fill="#34d399"
+                            fill="#10B981"
                             fontSize={10}
-                            fontFamily="JetBrains Mono"
-                            fontWeight="bold"
+                            fontFamily="Inter, sans-serif"
+                            fontWeight="600"
                           >
                             Click to close
                           </text>
@@ -804,7 +797,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                     y1={pt1.y}
                     x2={pt2.x}
                     y2={pt2.y}
-                    stroke="#c4b5fd"
+                    stroke="#7C5CFF"
                     strokeWidth={1.5}
                     strokeDasharray="4,4"
                   />
@@ -817,31 +810,31 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       {/* Floating Instructions & Live Measurements Banner during Drawing */}
       {drawingPoints.length > 0 && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-[#090d16]/95 border border-[#233148] px-4 py-2 rounded-full shadow-2xl flex items-center gap-3 text-xs font-mono text-slate-200 z-20 backdrop-blur-md">
-          <div className="flex items-center gap-1.5 text-emerald-400">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span className="font-semibold">Points: {drawingPoints.length}</span>
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-3.5 py-1.5 rounded shadow-xl flex items-center gap-3 text-xs text-[var(--text-primary)] z-20 transition-colors">
+          <div className="flex items-center gap-1.5 text-emerald-500 font-medium">
+            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span>Points: {drawingPoints.length}</span>
           </div>
 
           {rubberbandStats && (
-            <div className="flex items-center gap-2 border-l border-[#233148] pl-3 text-slate-300">
+            <div className="flex items-center gap-2 border-l border-[var(--border-subtle)] pl-3 text-[var(--text-secondary)] tabular-nums">
               <span>
                 Length:{' '}
-                <strong className="text-white">
+                <strong className="text-[var(--text-primary)]">
                   {rubberbandStats.distanceM >= 1000
                     ? `${(rubberbandStats.distanceM / 1000).toFixed(2)} km`
                     : `${rubberbandStats.distanceM.toFixed(1)} m`}
                 </strong>
               </span>
-              <span>•</span>
+              <span>·</span>
               <span>
                 Bearing:{' '}
-                <strong className="text-[#a78bfa]">{rubberbandStats.azimuthDeg.toFixed(1)}°</strong>
+                <strong className="text-[#7C5CFF]">{rubberbandStats.azimuthDeg.toFixed(1)}°</strong>
               </span>
             </div>
           )}
 
-          <div className="border-l border-[#233148] pl-3 text-[11px] text-slate-400">
+          <div className="border-l border-[var(--border-subtle)] pl-3 text-[11px] text-[var(--text-muted)]">
             {currentTool === 'polygon'
               ? (drawingPoints.length >= 3 ? 'Click start point, double-click, or press Enter' : 'Click map to place boundary vertices')
               : currentTool === 'transect'
@@ -850,7 +843,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           </div>
 
           {/* Quick Action Buttons */}
-          <div className="flex items-center gap-1.5 border-l border-[#233148] pl-3">
+          <div className="flex items-center gap-1.5 border-l border-[var(--border-subtle)] pl-3">
             {((currentTool === 'polygon' && drawingPoints.length >= 3) ||
               ((currentTool === 'line' || currentTool === 'transect') && drawingPoints.length >= 2)) && (
               <button
@@ -858,7 +851,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
                   if (currentTool === 'polygon') finishPolygon();
                   else finishLine(currentTool === 'transect' ? 'transect' : 'measure_line');
                 }}
-                className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-bold flex items-center gap-1 transition-colors"
+                className="px-2.5 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-semibold flex items-center gap-1 transition-colors"
               >
                 <Check className="w-3 h-3" />
                 <span>Finish</span>
@@ -867,7 +860,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
             <button
               onClick={() => setDrawingPoints([])}
-              className="px-2 py-0.5 bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800 rounded text-[10px] font-bold flex items-center gap-1 transition-colors"
+              className="px-2.5 py-0.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/30 rounded text-[10px] font-semibold flex items-center gap-1 transition-colors"
             >
               <X className="w-3 h-3" />
               <span>Cancel</span>
@@ -885,7 +878,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             }
           }}
           title="Reset North & Pitch"
-          className="w-8 h-8 rounded bg-[#101726]/90 hover:bg-[#1a253a] border border-[#233148] flex items-center justify-center text-[#a78bfa] shadow-lg transition-colors"
+          aria-label="Reset North and Pitch"
+          className="w-8 h-8 rounded bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-hover)] border border-[var(--border-subtle)] flex items-center justify-center text-[#7C5CFF] shadow-sm transition-colors"
         >
           <Compass className="w-4 h-4" />
         </button>

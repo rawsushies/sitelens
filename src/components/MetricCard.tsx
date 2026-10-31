@@ -1,7 +1,7 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * SiteLens Metric Card with Full Scientific Provenance & Limitation Disclosure
+ * SiteLens Metric Card with Scientific Provenance & Limitation Disclosure (Design System v1.1)
  */
 
 import React, { useState } from 'react';
@@ -14,40 +14,41 @@ interface MetricCardProps {
 }
 
 export function MetricBadge({ classification }: { classification: MetricClassification }) {
+  // Anti-slop zero-pill discipline: render as clean unboxed text with subtle indicator dot
   switch (classification) {
     case 'geometry-derived':
       return (
-        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-950/60 text-emerald-400 border border-emerald-800/50">
-          <ShieldCheck className="w-2.5 h-2.5" />
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-500">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
           geometry-derived
         </span>
       );
     case 'dataset-derived':
       return (
-        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-sky-950/60 text-sky-400 border border-sky-800/50">
-          <Database className="w-2.5 h-2.5" />
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-sky-500">
+          <span className="w-1.5 h-1.5 rounded-full bg-sky-500" aria-hidden="true" />
           dataset-derived
         </span>
       );
     case 'model-derived':
       return (
-        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-violet-950/60 text-violet-400 border border-violet-800/50">
-          <Cpu className="w-2.5 h-2.5" />
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#7C5CFF]">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#7C5CFF]" aria-hidden="true" />
           model-derived
         </span>
       );
     case 'proxy':
       return (
-        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-amber-950/60 text-amber-400 border border-amber-800/50">
-          <Compass className="w-2.5 h-2.5" />
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-500">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden="true" />
           proxy indicator
         </span>
       );
     case 'unavailable':
     default:
       return (
-        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-900 text-slate-400 border border-slate-700">
-          <AlertTriangle className="w-2.5 h-2.5 text-slate-500" />
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--text-muted)]">
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)]" aria-hidden="true" />
           unavailable
         </span>
       );
@@ -58,17 +59,17 @@ export const MetricCard: React.FC<MetricCardProps> = ({ metric, compact = false 
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="bg-[#131b2b] border border-[#233148] rounded hover:border-[#334664] transition-colors p-2.5 text-xs">
+    <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-strong)] rounded transition-colors p-3 text-xs">
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <div className="text-[#94a3b8] font-medium text-[11px] truncate uppercase tracking-wider">
+          <div className="text-[var(--text-secondary)] font-medium text-[11px] truncate uppercase tracking-wider">
             {metric.label}
           </div>
-          <div className="text-base font-semibold text-white font-mono mt-0.5 flex items-baseline gap-1.5 flex-wrap">
+          <div className="text-base font-semibold text-[var(--text-primary)] tabular-nums mt-0.5 flex items-baseline gap-1.5 flex-wrap">
             <span>{metric.formattedValue || String(metric.value ?? 'N/A')}</span>
             {metric.unit && metric.unit !== 'count' && metric.unit !== 'status' && metric.unit !== 'boolean' && (
-              <span className="text-[11px] text-[#64748b] font-normal">{metric.unit}</span>
+              <span className="text-[11px] text-[var(--text-muted)] font-normal">{metric.unit}</span>
             )}
           </div>
         </div>
@@ -77,48 +78,57 @@ export const MetricCard: React.FC<MetricCardProps> = ({ metric, compact = false 
 
       {/* Warning notice if present */}
       {metric.warning && (
-        <div className="mt-2 p-1.5 bg-amber-950/40 border border-amber-800/50 rounded flex items-start gap-1.5 text-amber-300 text-[11px]">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" />
+        <div className="mt-2.5 p-2 bg-amber-500/10 border border-amber-500/30 rounded flex items-start gap-2 text-amber-600 dark:text-amber-400 text-[11px]">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>{metric.warning}</span>
         </div>
       )}
 
-      {/* Provenance Toggle */}
+      {/* Provenance Disclosure Toggle */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="mt-2 w-full flex items-center justify-between text-[10px] font-mono text-[#7e8ea6] hover:text-[#a78bfa] transition-colors pt-1.5 border-t border-[#1c273a]"
+        className="mt-2.5 w-full flex items-center justify-between text-[11px] text-[var(--text-secondary)] hover:text-[#7C5CFF] transition-colors pt-2 border-t border-[var(--border-subtle)]"
       >
-        <span className="flex items-center gap-1">
-          <Info className="w-3 h-3 text-[#7e8ea6]" />
-          {expanded ? 'Hide Provenance & Limitations' : 'Inspect Provenance & Limitations'}
+        <span className="flex items-center gap-1.5">
+          <Info className="w-3 h-3 text-[var(--text-muted)]" />
+          <span>{expanded ? 'Hide Provenance & Limitations' : 'Inspect Provenance & Limitations'}</span>
         </span>
-        <span>{expanded ? '▲' : '▼'}</span>
+        <span className="text-[10px] text-[var(--text-muted)]">{expanded ? '▲' : '▼'}</span>
       </button>
 
       {/* Expanded Provenance Details */}
       {expanded && (
-        <div className="mt-2 pt-2 border-t border-[#1e2a3f] space-y-1.5 text-[10px] font-mono text-[#94a3b8] bg-[#0c1320] p-2 rounded">
+        <div className="mt-2 pt-2 border-t border-[var(--border-subtle)] space-y-2 text-[11px] text-[var(--text-secondary)] bg-[var(--bg-surface-secondary)] p-2.5 rounded">
           <div>
-            <span className="text-[#64748b] uppercase">Source:</span>{' '}
-            <span className="text-slate-200">{metric.source}</span>
+            <span className="text-[var(--text-muted)] uppercase text-[10px] font-semibold tracking-wider block">
+              Source & Provenance
+            </span>
+            <span className="text-[var(--text-primary)] font-medium mt-0.5 block">{metric.source}</span>
           </div>
+
           <div>
-            <span className="text-[#64748b] uppercase">Method:</span>{' '}
-            <span className="text-slate-300">{metric.calculationMethod}</span>
+            <span className="text-[var(--text-muted)] uppercase text-[10px] font-semibold tracking-wider block">
+              Calculation Method
+            </span>
+            <span className="text-[var(--text-primary)] mt-0.5 block">{metric.calculationMethod}</span>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+
+          <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[var(--border-subtle)] text-[10px]">
             <div>
-              <span className="text-[#64748b] uppercase">Resolution:</span>{' '}
-              <span className="text-slate-300">{metric.spatialResolution}</span>
+              <span className="text-[var(--text-muted)] block">Spatial Resolution</span>
+              <span className="text-[var(--text-primary)] font-medium">{metric.spatialResolution}</span>
             </div>
             <div>
-              <span className="text-[#64748b] uppercase">Reference:</span>{' '}
-              <span className="text-slate-300">{metric.timestampOrReferencePeriod}</span>
+              <span className="text-[var(--text-muted)] block">Reference Period</span>
+              <span className="text-[var(--text-primary)] font-medium">{metric.timestampOrReferencePeriod}</span>
             </div>
           </div>
-          <div className="p-1.5 bg-[#141d2e] rounded border border-[#212e45] text-amber-200/90">
-            <span className="text-amber-400 font-semibold uppercase">Limitations:</span>{' '}
-            {metric.limitations}
+
+          <div className="pt-1 border-t border-[var(--border-subtle)]">
+            <span className="text-[var(--text-muted)] uppercase text-[10px] font-semibold tracking-wider block">
+              Scientific Limitations
+            </span>
+            <span className="text-[var(--text-secondary)] mt-0.5 block italic">{metric.limitations}</span>
           </div>
         </div>
       )}

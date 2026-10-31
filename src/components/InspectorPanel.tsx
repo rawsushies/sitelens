@@ -1,7 +1,7 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * SiteLens Geospatial Site Intelligence Workstation - Right Inspector Panel
+ * SiteLens Geospatial Site Intelligence Workstation - Right Analytical Inspector (Design System v1.1)
  */
 
 import React, { useState } from 'react';
@@ -13,32 +13,29 @@ import {
   CoordinateReport, 
   SolarAnalysis, 
   ClimateContextData, 
-  UrbanContextSummary,
-  ProvenancedMetric
+  UrbanContextSummary 
 } from '../types';
 import { MetricCard } from './MetricCard';
 import { 
-  Layers, 
+  Info, 
   Ruler, 
   Compass, 
   Sun, 
-  CloudRain, 
-  Building2, 
-  FileText, 
+  Layers, 
   Copy, 
   Check, 
-  AlertTriangle, 
-  Info, 
-  Eye, 
   Trash2, 
+  AlertTriangle, 
+  ChevronRight, 
+  Split, 
   RefreshCw,
-  Split,
-  ChevronRight
+  CloudRain,
+  Building2
 } from 'lucide-react';
 
 interface InspectorPanelProps {
   project: SiteProject;
-  activeFeature: SiteFeature | null;
+  activeFeature?: SiteFeature;
   polygonAnalysis: PolygonAnalysis | null;
   lineAnalysis: LineAnalysis | null;
   pointReport: CoordinateReport | null;
@@ -85,9 +82,9 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   const transects = project.features.filter(f => f.properties.featureType === 'transect');
 
   return (
-    <aside className="w-[390px] h-full bg-[#0d131f] border-l border-[#1f2b3e] flex flex-col z-20 text-xs text-slate-200 select-none">
+    <aside className="w-[390px] h-full bg-[var(--bg-surface)] border-l border-[var(--border-subtle)] flex flex-col z-20 text-xs text-[var(--text-primary)] select-none transition-colors duration-150">
       {/* Tab Navigation */}
-      <div className="flex border-b border-[#1f2b3e] bg-[#0a0f19] px-1 pt-1 overflow-x-auto no-scrollbar">
+      <div className="flex border-b border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-1 pt-1 overflow-x-auto no-scrollbar">
         {[
           { id: 'overview', label: 'Overview', icon: <Info className="w-3.5 h-3.5" /> },
           { id: 'geometry', label: 'Geometry', icon: <Ruler className="w-3.5 h-3.5" /> },
@@ -100,10 +97,10 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as InspectorTab)}
-              className={`flex items-center gap-1.5 px-3 py-2 font-mono text-[11px] whitespace-nowrap border-b-2 transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-medium whitespace-nowrap border-b-2 transition-all ${
                 isActive
-                  ? 'border-[#8b5cf6] text-[#c4b5fd] bg-[#141b2a]'
-                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-[#111724]'
+                  ? 'border-[#7C5CFF] text-[#7C5CFF] bg-[var(--bg-surface)]'
+                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]'
               }`}
             >
               {tab.icon}
@@ -121,12 +118,12 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
             {activeFeature ? (
               <>
                 {/* Active Feature Identity */}
-                <div className="p-2.5 bg-[#121927] border border-[#233148] rounded">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-mono uppercase text-[#a78bfa] tracking-wider">
+                <div className="p-3 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded space-y-2">
+                  <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)]">
+                    <span className="uppercase tracking-wider font-semibold text-[#7C5CFF]">
                       {activeFeature.properties.featureType.replace('_', ' ')}
                     </span>
-                    <span className="text-[10px] font-mono text-slate-500">
+                    <span className="tabular-nums">
                       ID: {activeFeature.id.slice(0, 12)}
                     </span>
                   </div>
@@ -134,17 +131,17 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                     type="text"
                     value={activeFeature.properties.name}
                     onChange={(e) => onUpdateFeatureName(activeFeature.id, e.target.value)}
-                    className="w-full bg-[#0b101a] border border-[#1f2b3e] focus:border-[#8b5cf6] px-2 py-1 rounded text-white font-medium text-xs outline-none"
+                    className="w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] focus:border-[#7C5CFF] px-2.5 py-1.5 rounded text-[var(--text-primary)] font-medium text-xs outline-none transition-colors"
                   />
                 </div>
 
                 {/* Topology Warning for Polygons */}
                 {polygonAnalysis?.isSelfIntersecting && (
-                  <div className="p-2.5 bg-rose-950/40 border border-rose-800/60 rounded text-rose-300 text-xs flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded text-rose-600 dark:text-rose-400 text-xs flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                     <div>
-                      <div className="font-semibold text-rose-200">Self-Intersecting Geometry (Bowtie)</div>
-                      <div className="text-[11px] text-rose-300/80 mt-0.5">
+                      <div className="font-semibold text-rose-700 dark:text-rose-300">Self-Intersecting Geometry (Bowtie)</div>
+                      <div className="text-[11px] mt-0.5 opacity-90">
                         Polygon boundary edges cross each other. Planimetric area computation requires a clean simple ring. Drag vertices to resolve overlap.
                       </div>
                     </div>
@@ -153,9 +150,9 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
 
                 {/* Primary Metrics */}
                 <div className="space-y-2">
-                  <div className="text-[11px] font-mono text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                  <div className="text-[11px] font-medium text-[var(--text-secondary)] uppercase tracking-wider flex items-center justify-between">
                     <span>Key Analytical Metrics</span>
-                    <span className="text-[10px] text-slate-500">WGS84 Datum</span>
+                    <span className="text-[10px] text-[var(--text-muted)]">WGS84 Datum</span>
                   </div>
 
                   {polygonAnalysis && (
@@ -198,10 +195,10 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 </div>
               </>
             ) : (
-              <div className="p-6 text-center text-slate-500 border border-dashed border-[#1f2b3e] rounded">
-                <Compass className="w-8 h-8 mx-auto mb-2 text-slate-600" />
-                <div className="font-medium text-slate-400">No Feature Selected</div>
-                <div className="text-[11px] mt-1 text-slate-500">
+              <div className="p-8 text-center text-[var(--text-muted)] border border-dashed border-[var(--border-subtle)] rounded space-y-2">
+                <Compass className="w-8 h-8 mx-auto text-[var(--text-muted)] opacity-60" />
+                <div className="font-medium text-[var(--text-primary)]">No Feature Selected</div>
+                <div className="text-[11px] text-[var(--text-secondary)] max-w-xs mx-auto">
                   Select a feature on the map canvas, or draw a new site boundary using the toolbar.
                 </div>
               </div>
@@ -214,48 +211,48 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
           <div className="space-y-4">
             {polygonAnalysis ? (
               <>
-                {/* Axis-Aligned Envelope with Prominent Warning */}
-                <div className="p-3 bg-[#131b2b] border border-[#233148] rounded space-y-2">
+                {/* Axis-Aligned Envelope Notice */}
+                <div className="p-3 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-[11px] uppercase text-slate-300 font-semibold">
+                    <span className="text-[11px] uppercase text-[var(--text-primary)] font-semibold tracking-wider">
                       Bounding Box Envelope
                     </span>
-                    <span className="text-[10px] font-mono text-amber-400 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-800/50">
+                    <span className="text-[10px] text-amber-500 font-medium">
                       Not Site Width
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 pt-1 font-mono">
-                    <div className="bg-[#0b101a] p-2 rounded border border-[#1e2a3f]">
-                      <div className="text-[10px] text-slate-500">E-W SPAN</div>
-                      <div className="text-sm font-semibold text-white">
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div className="bg-[var(--bg-surface)] p-2 rounded border border-[var(--border-subtle)]">
+                      <div className="text-[10px] text-[var(--text-muted)] font-medium">E-W SPAN</div>
+                      <div className="text-sm font-semibold text-[var(--text-primary)] tabular-nums">
                         {polygonAnalysis.bbox.eastWestSpanM.toLocaleString()} m
                       </div>
                     </div>
-                    <div className="bg-[#0b101a] p-2 rounded border border-[#1e2a3f]">
-                      <div className="text-[10px] text-slate-500">N-S SPAN</div>
-                      <div className="text-sm font-semibold text-white">
+                    <div className="bg-[var(--bg-surface)] p-2 rounded border border-[var(--border-subtle)]">
+                      <div className="text-[10px] text-[var(--text-muted)] font-medium">N-S SPAN</div>
+                      <div className="text-sm font-semibold text-[var(--text-primary)] tabular-nums">
                         {polygonAnalysis.bbox.northSouthSpanM.toLocaleString()} m
                       </div>
                     </div>
                   </div>
 
-                  <div className="p-2 bg-amber-950/30 border border-amber-800/40 rounded text-[11px] text-amber-200/90 leading-relaxed">
+                  <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
                     <strong>Architectural Notice:</strong> Bounding-box spans represent the axis-aligned geographic envelope, <em>never</em> true site dimensions or perpendicular parcel widths. Use the <strong>Transect Tool (T)</strong> below to measure real site widths.
                   </div>
                 </div>
 
                 {/* Site Transects Section */}
-                <div className="p-3 bg-[#131b2b] border border-[#233148] rounded space-y-2">
+                <div className="p-3 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 font-mono text-[11px] uppercase text-slate-300 font-semibold">
-                      <Split className="w-3.5 h-3.5 text-amber-400" />
+                    <div className="flex items-center gap-1.5 text-[11px] uppercase text-[var(--text-primary)] font-semibold tracking-wider">
+                      <Split className="w-3.5 h-3.5 text-amber-500" />
                       <span>User-Defined Transects ({transects.length})</span>
                     </div>
                   </div>
 
                   {transects.length === 0 ? (
-                    <div className="text-[11px] text-slate-500 py-1 font-mono">
+                    <div className="text-[11px] text-[var(--text-muted)] py-1">
                       No transects drawn yet. Select the <strong>Transect tool (T)</strong> to draw true cross-section width measurements across the site.
                     </div>
                   ) : (
@@ -264,15 +261,15 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                         <div
                           key={t.id}
                           onClick={() => onSelectFeature(t.id)}
-                          className="p-2 bg-[#0b101a] hover:bg-[#162032] border border-[#1e2a3f] rounded cursor-pointer transition-colors flex items-center justify-between"
+                          className="p-2.5 bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-hover)] border border-[var(--border-subtle)] rounded cursor-pointer transition-colors flex items-center justify-between"
                         >
                           <div>
-                            <div className="font-medium text-slate-200">{t.properties.name}</div>
-                            <div className="text-[10px] font-mono text-amber-400">
+                            <div className="font-medium text-[var(--text-primary)]">{t.properties.name}</div>
+                            <div className="text-[10px] text-amber-500 tabular-nums">
                               {t.properties.metrics?.line_total_length?.formattedValue || 'Measured transect'}
                             </div>
                           </div>
-                          <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                          <ChevronRight className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                         </div>
                       ))}
                     </div>
@@ -280,19 +277,19 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 </div>
 
                 {/* Boundary Segments Table */}
-                <div className="p-3 bg-[#131b2b] border border-[#233148] rounded space-y-2">
-                  <div className="font-mono text-[11px] uppercase text-slate-300 font-semibold">
+                <div className="p-3 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded space-y-2">
+                  <div className="text-[11px] uppercase text-[var(--text-primary)] font-semibold tracking-wider">
                     Boundary Edges & Bearings ({polygonAnalysis.segments.length})
                   </div>
-                  <div className="max-h-56 overflow-y-auto space-y-1 pr-1 font-mono text-[10px]">
+                  <div className="max-h-56 overflow-y-auto space-y-1 pr-1 text-[11px]">
                     {polygonAnalysis.segments.map((seg) => (
                       <div
                         key={seg.index}
-                        className="p-1.5 bg-[#0b101a] border border-[#1e2a3f] rounded flex items-center justify-between"
+                        className="p-2 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded flex items-center justify-between tabular-nums"
                       >
-                        <span className="text-[#a78bfa] font-bold">Edge {seg.index}</span>
-                        <span className="text-white font-medium">{seg.distanceM.toFixed(2)} m</span>
-                        <span className="text-slate-400">Azimuth: {seg.initialAzimuthDeg.toFixed(1)}°</span>
+                        <span className="text-[#7C5CFF] font-semibold">Edge {seg.index}</span>
+                        <span className="text-[var(--text-primary)] font-medium">{seg.distanceM.toFixed(2)} m</span>
+                        <span className="text-[var(--text-muted)]">Azimuth: {seg.initialAzimuthDeg.toFixed(1)}°</span>
                       </div>
                     ))}
                   </div>
@@ -303,26 +300,26 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 <MetricCard metric={lineAnalysis.metrics.line_total_length} />
                 <MetricCard metric={lineAnalysis.metrics.line_initial_bearing} />
 
-                <div className="p-3 bg-[#131b2b] border border-[#233148] rounded space-y-2">
-                  <div className="font-mono text-[11px] uppercase text-slate-300 font-semibold">
+                <div className="p-3 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded space-y-2">
+                  <div className="text-[11px] uppercase text-[var(--text-primary)] font-semibold tracking-wider">
                     Line Segments ({lineAnalysis.segments.length})
                   </div>
-                  <div className="space-y-1 font-mono text-[10px]">
+                  <div className="space-y-1 text-[11px]">
                     {lineAnalysis.segments.map((seg) => (
                       <div
                         key={seg.index}
-                        className="p-1.5 bg-[#0b101a] border border-[#1e2a3f] rounded flex items-center justify-between"
+                        className="p-2 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded flex items-center justify-between tabular-nums"
                       >
-                        <span className="text-sky-400">Segment {seg.index}</span>
-                        <span className="text-white font-medium">{seg.distanceM.toFixed(2)} m</span>
-                        <span className="text-slate-400">{seg.initialAzimuthDeg.toFixed(1)}°</span>
+                        <span className="text-sky-500 font-medium">Segment {seg.index}</span>
+                        <span className="text-[var(--text-primary)] font-medium">{seg.distanceM.toFixed(2)} m</span>
+                        <span className="text-[var(--text-muted)]">{seg.initialAzimuthDeg.toFixed(1)}°</span>
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="text-center text-slate-500 py-6">
+              <div className="text-center text-[var(--text-muted)] py-6">
                 Select a polygon or line feature to inspect geometric edges and measurements.
               </div>
             )}
@@ -334,59 +331,59 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
           <div className="space-y-3">
             {polygonAnalysis ? (
               <>
-                <div className="p-2.5 bg-[#131b2b] border border-[#233148] rounded space-y-2">
+                <div className="p-3 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-[11px] uppercase text-slate-300 font-semibold">
+                    <span className="text-[11px] uppercase text-[var(--text-primary)] font-semibold tracking-wider">
                       Centroid Coordinate
                     </span>
                     <button
                       onClick={() => handleCopy(`${polygonAnalysis.centroid[1]}, ${polygonAnalysis.centroid[0]}`, 'centroid')}
-                      className="text-[10px] font-mono text-[#a78bfa] hover:text-white flex items-center gap-1"
+                      className="text-[10px] text-[#7C5CFF] hover:text-[#6B47FC] flex items-center gap-1 font-medium transition-colors"
                     >
-                      {copiedText === 'centroid' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      {copiedText === 'centroid' ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                       <span>Copy [Lat, Lon]</span>
                     </button>
                   </div>
-                  <div className="font-mono text-xs text-white bg-[#0b101a] p-2 rounded border border-[#1e2a3f]">
+                  <div className="text-xs text-[var(--text-primary)] bg-[var(--bg-surface)] p-2.5 rounded border border-[var(--border-subtle)] tabular-nums font-medium">
                     {polygonAnalysis.centroid[1].toFixed(7)}° N, {polygonAnalysis.centroid[0].toFixed(7)}° E
                   </div>
                 </div>
 
                 {/* Vertices List */}
-                <div className="space-y-1.5">
-                  <div className="text-[11px] font-mono text-slate-400 uppercase tracking-wider">
+                <div className="space-y-2">
+                  <div className="text-[11px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
                     Site Boundary Vertex Registry ({polygonAnalysis.vertices.length})
                   </div>
                   <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
                     {polygonAnalysis.vertices.map((v, idx) => (
                       <div
                         key={idx}
-                        className="p-2.5 bg-[#121927] border border-[#233148] rounded font-mono text-[11px] space-y-1.5"
+                        className="p-3 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded text-[11px] space-y-1.5 tabular-nums"
                       >
-                        <div className="flex items-center justify-between border-b border-[#1c273a] pb-1">
-                          <span className="text-[#a78bfa] font-bold">Node {idx + 1}</span>
+                        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-1.5">
+                          <span className="text-[#7C5CFF] font-semibold">Node {idx + 1}</span>
                           <button
                             onClick={() => handleCopy(`${v.latitude.toFixed(7)}, ${v.longitude.toFixed(7)}`, `node-${idx}`)}
-                            className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1"
+                            className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)] flex items-center gap-1 transition-colors"
                           >
-                            {copiedText === `node-${idx}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                            {copiedText === `node-${idx}` ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                             <span>Copy DD</span>
                           </button>
                         </div>
 
                         <div>
-                          <span className="text-slate-500 text-[10px]">WGS84 DD:</span>{' '}
-                          <span className="text-slate-200">{v.latitude.toFixed(6)}°, {v.longitude.toFixed(6)}°</span>
+                          <span className="text-[var(--text-muted)] text-[10px]">WGS84 DD:</span>{' '}
+                          <span className="text-[var(--text-primary)] font-medium">{v.latitude.toFixed(6)}°, {v.longitude.toFixed(6)}°</span>
                         </div>
 
                         <div>
-                          <span className="text-slate-500 text-[10px]">DMS:</span>{' '}
-                          <span className="text-slate-300 text-[10px]">{v.dmsFormatted}</span>
+                          <span className="text-[var(--text-muted)] text-[10px]">DMS:</span>{' '}
+                          <span className="text-[var(--text-secondary)] text-[10px]">{v.dmsFormatted}</span>
                         </div>
 
-                        <div className="bg-[#0b101a] p-1.5 rounded border border-[#1a2538] text-[10px]">
-                          <span className="text-[#38bdf8] font-semibold">{v.utm.epsg}:</span>{' '}
-                          <span className="text-slate-300">{v.utm.formatted}</span>
+                        <div className="bg-[var(--bg-surface)] p-2 rounded border border-[var(--border-subtle)] text-[10px]">
+                          <span className="text-sky-500 font-semibold">{v.utm.epsg}:</span>{' '}
+                          <span className="text-[var(--text-secondary)]">{v.utm.formatted}</span>
                         </div>
                       </div>
                     ))}
@@ -394,29 +391,29 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 </div>
               </>
             ) : pointReport ? (
-              <div className="p-3 bg-[#131b2b] border border-[#233148] rounded space-y-3 font-mono">
-                <div className="font-semibold text-slate-200">Spot Datum Coordinates</div>
-                <div className="space-y-2 text-xs">
+              <div className="p-3 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded space-y-3">
+                <div className="font-semibold text-[var(--text-primary)]">Spot Datum Coordinates</div>
+                <div className="space-y-2 text-xs tabular-nums">
                   <div>
-                    <div className="text-slate-500 text-[10px]">DECIMAL DEGREES (WGS84)</div>
-                    <div className="text-white font-medium">{pointReport.latitude.toFixed(7)}°, {pointReport.longitude.toFixed(7)}°</div>
+                    <div className="text-[var(--text-muted)] text-[10px]">DECIMAL DEGREES (WGS84)</div>
+                    <div className="text-[var(--text-primary)] font-medium">{pointReport.latitude.toFixed(7)}°, {pointReport.longitude.toFixed(7)}°</div>
                   </div>
                   <div>
-                    <div className="text-slate-500 text-[10px]">SEXAGESIMAL (DMS)</div>
-                    <div className="text-slate-300">{pointReport.dmsFormatted}</div>
+                    <div className="text-[var(--text-muted)] text-[10px]">SEXAGESIMAL (DMS)</div>
+                    <div className="text-[var(--text-secondary)]">{pointReport.dmsFormatted}</div>
                   </div>
                   <div>
-                    <div className="text-slate-500 text-[10px]">PROJECTED UTM ({pointReport.utm.epsg})</div>
-                    <div className="text-sky-300">{pointReport.utm.formatted}</div>
+                    <div className="text-[var(--text-muted)] text-[10px]">PROJECTED UTM ({pointReport.utm.epsg})</div>
+                    <div className="text-sky-500 font-medium">{pointReport.utm.formatted}</div>
                   </div>
                   <div>
-                    <div className="text-slate-500 text-[10px]">WEB MERCATOR (EPSG:3857)</div>
-                    <div className="text-slate-400">{pointReport.webMercator.formatted}</div>
+                    <div className="text-[var(--text-muted)] text-[10px]">WEB MERCATOR (EPSG:3857)</div>
+                    <div className="text-[var(--text-secondary)]">{pointReport.webMercator.formatted}</div>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="text-center text-slate-500 py-6">
+              <div className="text-center text-[var(--text-muted)] py-6">
                 Select a geometry on the map to inspect geodetic and projected coordinates.
               </div>
             )}
@@ -427,67 +424,66 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
         {activeTab === 'environment' && (
           <div className="space-y-4">
             {/* Section A: Astronomical Solar Analysis */}
-            <div className="p-3 bg-[#131b2b] border border-[#233148] rounded space-y-3">
+            <div className="p-3 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded space-y-3">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 font-mono text-[11px] uppercase text-violet-300 font-semibold">
-                  <Sun className="w-3.5 h-3.5 text-amber-400" />
+                <div className="flex items-center gap-1.5 text-[11px] uppercase text-[#7C5CFF] font-semibold tracking-wider">
+                  <Sun className="w-3.5 h-3.5 text-amber-500" />
                   <span>Astronomical Solar Position</span>
                 </div>
-                <span className="text-[10px] font-mono text-slate-400">NOAA Model</span>
+                <span className="text-[10px] text-[var(--text-muted)]">NOAA Model</span>
               </div>
 
               {solarAnalysis ? (
                 <>
-                  <div className="grid grid-cols-2 gap-2 font-mono">
-                    <div className="bg-[#0b101a] p-2 rounded border border-[#1e2a3f]">
-                      <div className="text-[10px] text-slate-500">SOLAR ALTITUDE</div>
-                      <div className="text-sm font-semibold text-white">
+                  <div className="grid grid-cols-2 gap-2 tabular-nums">
+                    <div className="bg-[var(--bg-surface)] p-2 rounded border border-[var(--border-subtle)]">
+                      <div className="text-[10px] text-[var(--text-muted)] font-medium">SOLAR ALTITUDE</div>
+                      <div className="text-sm font-semibold text-[var(--text-primary)]">
                         {solarAnalysis.solarElevationDeg.toFixed(1)}°
                       </div>
-                      <div className="text-[9px] text-slate-500">
+                      <div className="text-[10px] text-[var(--text-muted)]">
                         {solarAnalysis.solarElevationDeg > 0 ? 'Above Horizon' : 'Night'}
                       </div>
                     </div>
-                    <div className="bg-[#0b101a] p-2 rounded border border-[#1e2a3f]">
-                      <div className="text-[10px] text-slate-500">SOLAR AZIMUTH</div>
-                      <div className="text-sm font-semibold text-white">
+                    <div className="bg-[var(--bg-surface)] p-2 rounded border border-[var(--border-subtle)]">
+                      <div className="text-[10px] text-[var(--text-muted)] font-medium">SOLAR AZIMUTH</div>
+                      <div className="text-sm font-semibold text-[var(--text-primary)]">
                         {solarAnalysis.solarAzimuthDeg.toFixed(1)}°
                       </div>
-                      <div className="text-[9px] text-slate-500">From True North</div>
+                      <div className="text-[10px] text-[var(--text-muted)]">From True North</div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-1.5 font-mono text-[10px] text-center">
-                    <div className="bg-[#0b101a] p-1.5 rounded border border-[#1e2a3f]">
-                      <div className="text-slate-500 text-[9px]">SUNRISE</div>
-                      <div className="text-amber-400 font-semibold">{solarAnalysis.sunriseTime}</div>
+                  <div className="grid grid-cols-3 gap-2 text-[11px] text-center tabular-nums">
+                    <div className="bg-[var(--bg-surface)] p-2 rounded border border-[var(--border-subtle)]">
+                      <div className="text-[var(--text-muted)] text-[9px]">SUNRISE</div>
+                      <div className="text-amber-500 font-semibold">{solarAnalysis.sunriseTime}</div>
                     </div>
-                    <div className="bg-[#0b101a] p-1.5 rounded border border-[#1e2a3f]">
-                      <div className="text-slate-500 text-[9px]">SOLAR NOON</div>
-                      <div className="text-amber-300 font-semibold">{solarAnalysis.solarNoonTime}</div>
+                    <div className="bg-[var(--bg-surface)] p-2 rounded border border-[var(--border-subtle)]">
+                      <div className="text-[var(--text-muted)] text-[9px]">SOLAR NOON</div>
+                      <div className="text-amber-500 font-semibold">{solarAnalysis.solarNoonTime}</div>
                     </div>
-                    <div className="bg-[#0b101a] p-1.5 rounded border border-[#1e2a3f]">
-                      <div className="text-slate-500 text-[9px]">SUNSET</div>
+                    <div className="bg-[var(--bg-surface)] p-2 rounded border border-[var(--border-subtle)]">
+                      <div className="text-[var(--text-muted)] text-[9px]">SUNSET</div>
                       <div className="text-amber-500 font-semibold">{solarAnalysis.sunsetTime}</div>
                     </div>
                   </div>
 
                   {/* Hourly Solar Arc Diagram */}
-                  <div className="bg-[#0b101a] p-2 rounded border border-[#1e2a3f]">
-                    <div className="text-[10px] font-mono text-slate-400 mb-1 flex items-center justify-between">
-                      <span>24-Hour Sun Elevation Arc</span>
-                      <span>Daylight: {solarAnalysis.daylightDurationHours}h</span>
+                  <div className="bg-[var(--bg-surface)] p-2.5 rounded border border-[var(--border-subtle)]">
+                    <div className="text-[10px] text-[var(--text-secondary)] mb-1.5 flex items-center justify-between">
+                      <span className="font-medium">24-Hour Sun Elevation Arc</span>
+                      <span className="tabular-nums">Daylight: {solarAnalysis.daylightDurationHours}h</span>
                     </div>
-                    <svg className="w-full h-16 bg-[#080d16] rounded" viewBox="0 0 240 60">
+                    <svg className="w-full h-16 bg-[var(--bg-surface-secondary)] rounded" viewBox="0 0 240 60">
                       {/* Horizon line */}
-                      <line x1="0" y1="45" x2="240" y2="45" stroke="#334155" strokeWidth="1" strokeDasharray="2,2" />
-                      <text x="5" y="42" fill="#64748b" fontSize="8" fontFamily="JetBrains Mono">Horizon (0°)</text>
+                      <line x1="0" y1="45" x2="240" y2="45" stroke="var(--border-strong)" strokeWidth="1" strokeDasharray="2,2" />
+                      <text x="5" y="42" fill="var(--text-muted)" fontSize="8" fontFamily="Inter">Horizon (0°)</text>
 
                       {/* Elevation curve */}
                       {(() => {
                         const pathD = solarAnalysis.hourlySunPath.reduce((acc, pt, idx) => {
                           const x = (idx / 23) * 240;
-                          // Map elevation -30 to 90 into y 60 to 5
                           const y = 45 - (pt.elevationDeg / 90) * 40;
                           return `${acc} ${idx === 0 ? 'M' : 'L'} ${x} ${Math.max(5, Math.min(58, y))}`;
                         }, '');
@@ -507,21 +503,21 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   <MetricCard metric={solarAnalysis.metrics.shadow_multiplier} />
                 </>
               ) : (
-                <div className="text-slate-500 text-center py-2">Loading astronomical data...</div>
+                <div className="text-[var(--text-muted)] text-center py-2">Loading astronomical data...</div>
               )}
             </div>
 
             {/* Section B: Open-Meteo Climate Context */}
-            <div className="p-3 bg-[#131b2b] border border-[#233148] rounded space-y-3">
+            <div className="p-3 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded space-y-3">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 font-mono text-[11px] uppercase text-sky-300 font-semibold">
-                  <CloudRain className="w-3.5 h-3.5 text-sky-400" />
+                <div className="flex items-center gap-1.5 text-[11px] uppercase text-sky-500 font-semibold tracking-wider">
+                  <CloudRain className="w-3.5 h-3.5 text-sky-500" />
                   <span>Regional Atmospheric Climate</span>
                 </div>
                 <button
                   onClick={onRefreshClimate}
                   disabled={isLoadingClimate}
-                  className="text-slate-400 hover:text-white"
+                  className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                   title="Refresh climate observations"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isLoadingClimate ? 'animate-spin' : ''}`} />
@@ -541,23 +537,23 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   <MetricCard metric={climateData.metrics.terrain_elevation || climateData.metrics.elevation_dem} />
                 </>
               ) : (
-                <div className="text-slate-500 text-center py-2 font-mono text-[11px]">
+                <div className="text-[var(--text-muted)] text-center py-2 text-[11px]">
                   {isLoadingClimate ? 'Querying Open-Meteo NWP Grid...' : 'Climate data ready upon site selection.'}
                 </div>
               )}
             </div>
 
             {/* Section C: OpenStreetMap Urban Context & Morphology */}
-            <div className="p-3 bg-[#131b2b] border border-[#233148] rounded space-y-3">
+            <div className="p-3 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded space-y-3">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 font-mono text-[11px] uppercase text-emerald-300 font-semibold">
-                  <Building2 className="w-3.5 h-3.5 text-emerald-400" />
+                <div className="flex items-center gap-1.5 text-[11px] uppercase text-emerald-500 font-semibold tracking-wider">
+                  <Building2 className="w-3.5 h-3.5 text-emerald-500" />
                   <span>Urban Context & Morphology</span>
                 </div>
                 <button
                   onClick={onRefreshUrban}
                   disabled={isLoadingUrban}
-                  className="text-slate-400 hover:text-white flex items-center gap-1 text-[10px] font-mono"
+                  className="text-[var(--text-muted)] hover:text-[var(--text-primary)] flex items-center gap-1 text-[10px] font-medium transition-colors"
                   title="Query OpenStreetMap Overpass API"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isLoadingUrban ? 'animate-spin' : ''}`} />
@@ -575,15 +571,15 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   <MetricCard metric={urbanContext.metrics.pedestrian_accessibility_proxy} />
 
                   {urbanContext.items.length > 0 && (
-                    <div className="bg-[#0b101a] p-2 rounded border border-[#1e2a3f] space-y-1">
-                      <div className="text-[10px] font-mono text-slate-400 uppercase">
+                    <div className="bg-[var(--bg-surface)] p-2.5 rounded border border-[var(--border-subtle)] space-y-1.5">
+                      <div className="text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">
                         Sampled Urban Entities
                       </div>
-                      <div className="max-h-32 overflow-y-auto space-y-1 pr-1 font-mono text-[10px]">
+                      <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1 text-[11px]">
                         {urbanContext.items.slice(0, 8).map((it, idx) => (
-                          <div key={idx} className="flex items-center justify-between text-slate-300">
+                          <div key={idx} className="flex items-center justify-between text-[var(--text-primary)]">
                             <span className="truncate max-w-[180px]">{it.name}</span>
-                            <span className="text-[9px] text-slate-500 bg-[#162032] px-1 rounded">
+                            <span className="text-[10px] text-[var(--text-muted)]">
                               {it.type || it.category}
                             </span>
                           </div>
@@ -593,7 +589,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   )}
                 </>
               ) : (
-                <div className="text-slate-500 text-center py-2 font-mono text-[11px]">
+                <div className="text-[var(--text-muted)] text-center py-2 text-[11px]">
                   {isLoadingUrban ? 'Querying OpenStreetMap Overpass...' : 'Click "Query OSM" to inspect surrounding urban fabric.'}
                 </div>
               )}
@@ -604,13 +600,13 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
         {/* TAB 5: FEATURES & LAYERS */}
         {activeTab === 'features' && (
           <div className="space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 uppercase">
+            <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] uppercase tracking-wider font-semibold">
               <span>Project Vector Layers</span>
-              <span>{project.features.length} Features</span>
+              <span className="tabular-nums">{project.features.length} Features</span>
             </div>
 
             {project.features.length === 0 ? (
-              <div className="text-center text-slate-500 py-8 border border-dashed border-[#1f2b3e] rounded font-mono">
+              <div className="text-center text-[var(--text-muted)] py-8 border border-dashed border-[var(--border-subtle)] rounded">
                 No features in project. Draw geometries using the toolbar.
               </div>
             ) : (
@@ -623,20 +619,20 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                       onClick={() => onSelectFeature(feat.id)}
                       className={`p-2.5 rounded border cursor-pointer transition-colors flex items-center justify-between ${
                         isSelected
-                          ? 'bg-[#182338] border-[#8b5cf6]'
-                          : 'bg-[#111827] border-[#1e2a3f] hover:bg-[#162034]'
+                          ? 'bg-[var(--brand-subtle)] border-[#7C5CFF]'
+                          : 'bg-[var(--bg-surface-secondary)] border-[var(--border-subtle)] hover:bg-[var(--bg-surface-hover)]'
                       }`}
                     >
-                      <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <div
                           className="w-3 h-3 rounded-full shrink-0"
                           style={{ backgroundColor: feat.properties.color }}
                         />
                         <div className="min-w-0">
-                          <div className="font-medium text-slate-200 text-xs truncate">
+                          <div className="font-medium text-[var(--text-primary)] text-xs truncate">
                             {feat.properties.name}
                           </div>
-                          <div className="text-[10px] font-mono text-slate-400">
+                          <div className="text-[10px] text-[var(--text-muted)]">
                             {feat.properties.featureType.replace('_', ' ')}
                           </div>
                         </div>
@@ -648,7 +644,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                             e.stopPropagation();
                             onDeleteFeature(feat.id);
                           }}
-                          className="p-1 text-slate-500 hover:text-rose-400 rounded"
+                          className="p-1 text-[var(--text-muted)] hover:text-rose-500 rounded transition-colors"
                           title="Delete feature"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

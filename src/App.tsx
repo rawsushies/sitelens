@@ -459,7 +459,7 @@ export default function App() {
   );
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#0b0f17] text-slate-100 overflow-hidden font-sans">
+    <div className="flex flex-col h-screen w-screen bg-[var(--bg-workspace)] text-[var(--text-primary)] overflow-hidden font-sans transition-colors duration-150">
       {/* Top Bar */}
       <TopBar
         project={project}
@@ -516,7 +516,7 @@ export default function App() {
 
         <InspectorPanel
           project={project}
-          activeFeature={activeFeature}
+          activeFeature={activeFeature || undefined}
           polygonAnalysis={polygonAnalysis}
           lineAnalysis={lineAnalysis}
           pointReport={pointReport}
