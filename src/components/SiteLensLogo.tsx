@@ -98,7 +98,7 @@ export const SiteLensLogo: React.FC<SiteLensLogoProps> = ({
       {/* Optional Typographic Brand Lockup */}
       {withText && (
         <div className="flex items-baseline gap-1.5 font-display tracking-tight font-bold text-sm text-[var(--text-primary)]">
-          <span>SiteLens</span>
+          <span>Site<span className="text-[#7C5CFF]">Lens</span></span>
           <span className="text-[10px] font-sans font-semibold text-[var(--text-muted)] tracking-wider uppercase">
             Workstation
           </span>

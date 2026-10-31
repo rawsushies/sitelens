@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { inspectCoordinates } from '../coordinates';
+import { inspectCoordinates, formatCoordinatePair } from '../coordinates';
 import { Crosshair, Map, Shield } from 'lucide-react';
 
 interface BottomBarProps {
@@ -31,7 +31,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
           <Crosshair className="w-3 h-3 text-[#7C5CFF]" />
           <span className="text-[var(--text-muted)] font-medium">WGS84:</span>
           <span className="font-medium tabular-nums">
-            {report.latitude.toFixed(6)}° N, {report.longitude.toFixed(6)}° E
+            {formatCoordinatePair(report.latitude, report.longitude, 6)}
           </span>
         </div>
 

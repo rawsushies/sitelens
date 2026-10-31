@@ -16,6 +16,7 @@ import {
   UrbanContextSummary 
 } from '../types';
 import { MetricCard } from './MetricCard';
+import { formatCoordinatePair } from '../coordinates';
 import { 
   Info, 
   Ruler, 
@@ -345,7 +346,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                     </button>
                   </div>
                   <div className="text-xs text-[var(--text-primary)] bg-[var(--bg-surface)] p-2.5 rounded border border-[var(--border-subtle)] tabular-nums font-medium">
-                    {polygonAnalysis.centroid[1].toFixed(7)}° N, {polygonAnalysis.centroid[0].toFixed(7)}° E
+                    {formatCoordinatePair(polygonAnalysis.centroid[1], polygonAnalysis.centroid[0], 7)}
                   </div>
                 </div>
 
@@ -373,7 +374,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
 
                         <div>
                           <span className="text-[var(--text-muted)] text-[10px]">WGS84 DD:</span>{' '}
-                          <span className="text-[var(--text-primary)] font-medium">{v.latitude.toFixed(6)}°, {v.longitude.toFixed(6)}°</span>
+                          <span className="text-[var(--text-primary)] font-medium">{formatCoordinatePair(v.latitude, v.longitude, 6)}</span>
                         </div>
 
                         <div>
@@ -396,7 +397,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 <div className="space-y-2 text-xs tabular-nums">
                   <div>
                     <div className="text-[var(--text-muted)] text-[10px]">DECIMAL DEGREES (WGS84)</div>
-                    <div className="text-[var(--text-primary)] font-medium">{pointReport.latitude.toFixed(7)}°, {pointReport.longitude.toFixed(7)}°</div>
+                    <div className="text-[var(--text-primary)] font-medium">{formatCoordinatePair(pointReport.latitude, pointReport.longitude, 7)}</div>
                   </div>
                   <div>
                     <div className="text-[var(--text-muted)] text-[10px]">SEXAGESIMAL (DMS)</div>

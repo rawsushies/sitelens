@@ -817,6 +817,85 @@ describe('M2.0.2 OSM Overpass Multipolygon Relations & Ring Reconstruction (11 R
       globalThis.fetch = originalFetch;
     }
   });
+
+  it('distinguishes raw queried counts from spatially filtered feature counts', async () => {
+    const provider = new OSMDataProvider();
+    const originalFetch = globalThis.fetch;
+
+    // Site boundary: box from [0, 0] to [1, 1]
+    const siteBoundary: [number, number][] = [
+      [0, 0], [1, 0], [1, 1], [0, 1], [0, 0]
+    ];
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({
+        version: 0.6,
+        elements: [
+          // Building 1: inside site boundary
+          {
+            type: 'way',
+            id: 101,
+            tags: { building: 'yes' },
+            geometry: [
+              { lat: 0.2, lon: 0.2 },
+              { lat: 0.4, lon: 0.2 },
+              { lat: 0.4, lon: 0.4 },
+              { lat: 0.2, lon: 0.4 },
+              { lat: 0.2, lon: 0.2 }
+            ]
+          },
+          // Building 2: far outside site boundary
+          {
+            type: 'way',
+            id: 102,
+            tags: { building: 'residential' },
+            geometry: [
+              { lat: 5.0, lon: 5.0 },
+              { lat: 5.2, lon: 5.0 },
+              { lat: 5.2, lon: 5.2 },
+              { lat: 5.0, lon: 5.2 },
+              { lat: 5.0, lon: 5.0 }
+            ]
+          },
+          // Road: outside site boundary
+          {
+            type: 'way',
+            id: 201,
+            tags: { highway: 'primary' },
+            geometry: [
+              { lat: 8.0, lon: 8.0 },
+              { lat: 8.5, lon: 8.5 }
+            ]
+          }
+        ]
+      })
+    } as any);
+
+    try {
+      const res = await provider.fetch(
+        { latitude: 0.5, longitude: 0.5 },
+        { siteBoundary }
+      );
+
+      expect(res.status).toBe('success');
+      // Raw queried totals before filtering
+      expect(res.data?.queriedTotals.buildings).toBe(2);
+      expect(res.data?.queriedTotals.roads).toBe(1);
+      expect(res.stats?.totalElements).toBe(3);
+
+      // Spatially filtered totals inside siteBoundary
+      expect(res.data?.buildingCount).toBe(1);
+      expect(res.data?.roadCount).toBe(0);
+      expect(res.data?.features.length).toBe(1);
+      expect(res.stats?.retainedElements).toBe(1);
+      expect(res.data?.features[0].id).toBe('osm-way-101');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
 describe('M2.0.2 Weather & Elevation Provenance Disclosures', () => {

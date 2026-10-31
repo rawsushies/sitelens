@@ -22,7 +22,7 @@ import {
 import { SiteProject, BasemapId } from '../types';
 import { BASEMAP_OPTIONS } from '../map/basemaps';
 import { searchLocations, GeocodingResult } from '../data-sources/geocoding';
-import { parseCoordinatesInput } from '../coordinates';
+import { parseCoordinatesInput, formatCoordinatePair } from '../coordinates';
 import { SiteLensLogo } from './SiteLensLogo';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -97,7 +97,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         const [lng, lat] = directCoords;
         setSearchResults([
           {
-            name: `Coordinates: ${lat.toFixed(5)}°, ${lng.toFixed(5)}°`,
+            name: `Coordinates: ${formatCoordinatePair(lat, lng, 5)}`,
             label: 'Direct Coordinate Navigation',
             latitude: lat,
             longitude: lng
@@ -225,7 +225,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   <div className="text-[var(--text-primary)] font-medium text-xs truncate">{loc.name}</div>
                   <div className="text-[10px] text-[var(--text-secondary)] truncate">{loc.label}</div>
                   <div className="text-[10px] text-[var(--text-muted)] tabular-nums mt-0.5">
-                    {loc.latitude.toFixed(5)}°N, {loc.longitude.toFixed(5)}°E
+                    {formatCoordinatePair(loc.latitude, loc.longitude, 5)}
                   </div>
                 </div>
               </button>
@@ -284,7 +284,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Workspace Theme`}
           aria-label="Toggle UI Theme"
         >
-          {theme === 'dark' ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-slate-700" />}
+          {theme === 'dark' ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-[var(--text-primary)]" />}
         </button>
 
         {/* Save Button */}

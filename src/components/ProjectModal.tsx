@@ -6,6 +6,7 @@
 
 import React, { useState } from 'react';
 import { SiteProject } from '../types';
+import { formatCoordinatePair } from '../coordinates';
 import { FolderGit2, X, Plus, Calendar, Layers, MapPin, Trash2 } from 'lucide-react';
 
 interface ProjectModalProps {
@@ -168,7 +169,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                         <span>·</span>
                         <span className="flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
-                          {proj.center[1].toFixed(3)}°N, {proj.center[0].toFixed(3)}°E
+                          {formatCoordinatePair(proj.center[1], proj.center[0], 3)}
                         </span>
                       </div>
                     </div>

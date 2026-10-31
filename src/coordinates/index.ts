@@ -27,24 +27,59 @@ export function getUtmProj4String(zone: number, hemisphere: 'N' | 'S'): string {
 }
 
 /**
- * Converts decimal degrees to DMS structure
+ * Converts decimal degrees to DMS structure with rollover protection and correct hemisphere assignment
  */
 export function decimalToDMS(deg: number, isLatitude: boolean): CoordinateDMS {
+  const isNegative = deg < 0 || Object.is(deg, -0);
   const absolute = Math.abs(deg);
-  const degrees = Math.floor(absolute);
+  
+  let degrees = Math.floor(absolute);
   const minutesNotTruncated = (absolute - degrees) * 60;
-  const minutes = Math.floor(minutesNotTruncated);
-  const seconds = Number(((minutesNotTruncated - minutes) * 60).toFixed(3));
+  let minutes = Math.floor(minutesNotTruncated);
+  const rawSeconds = (minutesNotTruncated - minutes) * 60;
 
-  let direction: 'N' | 'S' | 'E' | 'W';
-  if (isLatitude) {
-    direction = deg >= 0 ? 'N' : 'S';
-  } else {
-    direction = deg >= 0 ? 'E' : 'W';
+  // Round seconds to 2 decimal places and handle 60.00" rollover
+  let seconds = Math.round(rawSeconds * 100) / 100;
+  if (seconds >= 60) {
+    seconds = 0;
+    minutes += 1;
+    if (minutes >= 60) {
+      minutes = 0;
+      degrees += 1;
+    }
   }
+
+  const direction: 'N' | 'S' | 'E' | 'W' = isLatitude
+    ? (isNegative ? 'S' : 'N')
+    : (isNegative ? 'W' : 'E');
 
   const formatted = `${degrees}° ${minutes}' ${seconds.toFixed(2)}" ${direction}`;
   return { degrees, minutes, seconds, direction, formatted };
+}
+
+/**
+ * Formats latitude with correct hemisphere suffix (N/S) and absolute value
+ */
+export function formatLatitude(lat: number, decimals: number = 6): string {
+  const isNegative = lat < 0 || Object.is(lat, -0);
+  const dir = isNegative ? 'S' : 'N';
+  return `${Math.abs(lat).toFixed(decimals)}° ${dir}`;
+}
+
+/**
+ * Formats longitude with correct hemisphere suffix (E/W) and absolute value
+ */
+export function formatLongitude(lng: number, decimals: number = 6): string {
+  const isNegative = lng < 0 || Object.is(lng, -0);
+  const dir = isNegative ? 'W' : 'E';
+  return `${Math.abs(lng).toFixed(decimals)}° ${dir}`;
+}
+
+/**
+ * Formats a coordinate pair [latitude, longitude] with proper N/S and E/W suffixes
+ */
+export function formatCoordinatePair(lat: number, lng: number, decimals: number = 6): string {
+  return `${formatLatitude(lat, decimals)}, ${formatLongitude(lng, decimals)}`;
 }
 
 /**
@@ -108,7 +143,7 @@ export function getCoordinateMetrics(report: CoordinateReport): Record<string, P
       name: 'longitude',
       label: 'Longitude (WGS84)',
       value: report.longitude,
-      formattedValue: `${report.longitude.toFixed(6)}°`,
+      formattedValue: formatLongitude(report.longitude, 6),
       unit: '°',
       classification: 'geometry-derived',
       source: 'WGS84 Ellipsoid (EPSG:4326)',
@@ -123,7 +158,7 @@ export function getCoordinateMetrics(report: CoordinateReport): Record<string, P
       name: 'latitude',
       label: 'Latitude (WGS84)',
       value: report.latitude,
-      formattedValue: `${report.latitude.toFixed(6)}°`,
+      formattedValue: formatLatitude(report.latitude, 6),
       unit: '°',
       classification: 'geometry-derived',
       source: 'WGS84 Ellipsoid (EPSG:4326)',

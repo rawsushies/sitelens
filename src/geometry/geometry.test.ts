@@ -11,7 +11,14 @@ import {
   checkPolygonSelfIntersection, 
   analyzeLine 
 } from './index';
-import { decimalToDMS, getUtmZone, inspectCoordinates } from '../coordinates';
+import { 
+  decimalToDMS, 
+  getUtmZone, 
+  inspectCoordinates,
+  formatLatitude,
+  formatLongitude,
+  formatCoordinatePair
+} from '../coordinates';
 import { calculateSolarAnalysis } from '../solar';
 
 describe('Geodesic & Ellipsoidal Calculations', () => {
@@ -88,6 +95,48 @@ describe('Coordinate Conversions & Projections', () => {
     const lonDms = decimalToDMS(-0.0005, false);
     expect(lonDms.degrees).toBe(0);
     expect(lonDms.direction).toBe('W');
+  });
+
+  it('correctly assigns S for negative latitudes and W for negative longitudes', () => {
+    // Southern hemisphere (Sydney, Australia)
+    const southDms = decimalToDMS(-33.8688, true);
+    expect(southDms.direction).toBe('S');
+    expect(southDms.degrees).toBe(33);
+    expect(southDms.formatted).toContain('S');
+
+    // Western hemisphere (New York City, USA)
+    const westDms = decimalToDMS(-74.006, false);
+    expect(westDms.direction).toBe('W');
+    expect(westDms.degrees).toBe(74);
+    expect(westDms.formatted).toContain('W');
+  });
+
+  it('prevents 60.00" DMS rounding rollover and correctly increments minutes and degrees', () => {
+    // Value where raw seconds are 59.999" (e.g. 51° 29' 59.999" -> 51° 30' 0.00" N)
+    const rolloverMinutes = 51 + 29 / 60 + 59.999 / 3600;
+    const rolloverMinDms = decimalToDMS(rolloverMinutes, true);
+    expect(rolloverMinDms.seconds).toBe(0);
+    expect(rolloverMinDms.minutes).toBe(30);
+    expect(rolloverMinDms.degrees).toBe(51);
+    expect(rolloverMinDms.formatted).not.toContain('60.00"');
+    expect(rolloverMinDms.formatted).toBe('51° 30\' 0.00" N');
+
+    // Value where minutes and seconds roll over (51° 59' 59.999" -> 52° 0' 0.00" N)
+    const rolloverDegrees = 51 + 59 / 60 + 59.999 / 3600;
+    const rolloverDegDms = decimalToDMS(rolloverDegrees, true);
+    expect(rolloverDegDms.seconds).toBe(0);
+    expect(rolloverDegDms.minutes).toBe(0);
+    expect(rolloverDegDms.degrees).toBe(52);
+    expect(rolloverDegDms.formatted).toBe('52° 0\' 0.00" N');
+  });
+
+  it('formats coordinates with dynamic hemisphere suffixes without hardcoding', () => {
+    expect(formatLatitude(51.4769, 4)).toBe('51.4769° N');
+    expect(formatLatitude(-33.8688, 4)).toBe('33.8688° S');
+    expect(formatLongitude(-0.0015, 4)).toBe('0.0015° W');
+    expect(formatLongitude(151.2093, 4)).toBe('151.2093° E');
+    expect(formatCoordinatePair(-33.8688, 151.2093, 4)).toBe('33.8688° S, 151.2093° E');
+    expect(formatCoordinatePair(40.7128, -74.006, 4)).toBe('40.7128° N, 74.0060° W');
   });
 
   it('determines correct UTM zones across global longitudes', () => {

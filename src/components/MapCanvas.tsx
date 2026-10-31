@@ -473,7 +473,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   }
 
   return (
-    <div className="relative flex-1 h-full w-full bg-[#0b0f17] overflow-hidden select-none">
+    <div className="relative flex-1 h-full w-full bg-[var(--bg-workspace)] overflow-hidden select-none">
       {/* MapLibre DOM Target */}
       <div 
         ref={mapContainerRef} 
