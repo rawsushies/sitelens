@@ -107,16 +107,18 @@ export async function loadAllProjects(): Promise<SiteProject[]> {
   }
 
   // Resilient fallback to localStorage backup
-  try {
-    const raw = localStorage.getItem('sitelens_projects_backup');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem('sitelens_projects_backup');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
       }
+    } catch (lsErr) {
+      console.warn('localStorage fallback load error:', lsErr);
     }
-  } catch (lsErr) {
-    console.error('localStorage fallback load error:', lsErr);
   }
 
   return [];
@@ -132,19 +134,21 @@ export async function saveProject(project: SiteProject): Promise<void> {
   };
 
   // Always mirror to localStorage as resilient fallback
-  try {
-    const raw = localStorage.getItem('sitelens_projects_backup');
-    const backupList: SiteProject[] = raw ? JSON.parse(raw) : [];
-    const idx = backupList.findIndex(p => p.id === updatedProject.id);
-    if (idx >= 0) {
-      backupList[idx] = updatedProject;
-    } else {
-      backupList.push(updatedProject);
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem('sitelens_projects_backup');
+      const backupList: SiteProject[] = raw ? JSON.parse(raw) : [];
+      const idx = backupList.findIndex(p => p.id === updatedProject.id);
+      if (idx >= 0) {
+        backupList[idx] = updatedProject;
+      } else {
+        backupList.push(updatedProject);
+      }
+      localStorage.setItem('sitelens_projects_backup', JSON.stringify(backupList));
+      localStorage.setItem(ACTIVE_PROJECT_KEY, updatedProject.id);
+    } catch (lsErr) {
+      console.warn('localStorage backup warning:', lsErr);
     }
-    localStorage.setItem('sitelens_projects_backup', JSON.stringify(backupList));
-    localStorage.setItem(ACTIVE_PROJECT_KEY, updatedProject.id);
-  } catch (lsErr) {
-    console.warn('localStorage backup warning:', lsErr);
   }
 
   try {
@@ -158,7 +162,7 @@ export async function saveProject(project: SiteProject): Promise<void> {
       req.onerror = () => reject(req.error);
     });
   } catch (err) {
-    console.warn('IndexedDB saveProject error (persisted via localStorage fallback):', err);
+    // If running in environment without IndexedDB, localStorage mirror was already written
   }
 }
 
@@ -167,18 +171,20 @@ export async function saveProject(project: SiteProject): Promise<void> {
  */
 export async function deleteProject(projectId: string): Promise<void> {
   // Update localStorage mirror
-  try {
-    const raw = localStorage.getItem('sitelens_projects_backup');
-    if (raw) {
-      const backupList: SiteProject[] = JSON.parse(raw);
-      const filtered = backupList.filter(p => p.id !== projectId);
-      localStorage.setItem('sitelens_projects_backup', JSON.stringify(filtered));
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem('sitelens_projects_backup');
+      if (raw) {
+        const backupList: SiteProject[] = JSON.parse(raw);
+        const filtered = backupList.filter(p => p.id !== projectId);
+        localStorage.setItem('sitelens_projects_backup', JSON.stringify(filtered));
+      }
+      if (localStorage.getItem(ACTIVE_PROJECT_KEY) === projectId) {
+        localStorage.removeItem(ACTIVE_PROJECT_KEY);
+      }
+    } catch (lsErr) {
+      console.warn('localStorage delete warning:', lsErr);
     }
-    if (localStorage.getItem(ACTIVE_PROJECT_KEY) === projectId) {
-      localStorage.removeItem(ACTIVE_PROJECT_KEY);
-    }
-  } catch (lsErr) {
-    console.warn('localStorage delete warning:', lsErr);
   }
 
   try {

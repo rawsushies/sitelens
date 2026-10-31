@@ -186,7 +186,7 @@ export interface SolarAnalysis {
 export interface ClimateContextData {
   latitude: number;
   longitude: number;
-  elevationM: number;
+  elevationM: number | null;
   temperatureC?: number;
   apparentTemperatureC?: number;
   relativeHumidityPct?: number;

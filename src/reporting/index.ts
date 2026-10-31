@@ -5,6 +5,7 @@
  */
 
 import { SiteProject, SiteFeature, ProvenancedMetric, PolygonAnalysis } from '../types';
+import { inspectCoordinates } from '../coordinates';
 
 export interface SiteIntelligenceReport {
   projectTitle: string;
@@ -75,16 +76,23 @@ export function generateSiteIntelligenceReport(
     metricsByCategory[cat].push(m);
   });
 
-  const primaryBoundary = activePolygonAnalysis ? {
-    name: project.features.find(f => f.id === project.activeFeatureId)?.properties.name || 'Active Site Boundary',
-    areaM2: activePolygonAnalysis.ellipsoidalAreaSqM,
-    areaHectares: activePolygonAnalysis.ellipsoidalAreaHectares,
-    areaAcres: activePolygonAnalysis.ellipsoidalAreaAcres,
-    perimeterM: activePolygonAnalysis.ellipsoidalPerimeterM,
-    centroidDms: `${activePolygonAnalysis.vertices[0]?.dmsFormatted || ''}`,
-    centroidUtm: `${activePolygonAnalysis.vertices[0]?.utm.formatted || ''}`,
-    bboxEnvelope: `EW: ${activePolygonAnalysis.bbox.eastWestSpanM}m x NS: ${activePolygonAnalysis.bbox.northSouthSpanM}m`
-  } : undefined;
+  let primaryBoundary = undefined;
+  if (activePolygonAnalysis) {
+    const centroidReport = inspectCoordinates(
+      activePolygonAnalysis.centroid[0],
+      activePolygonAnalysis.centroid[1]
+    );
+    primaryBoundary = {
+      name: project.features.find(f => f.id === project.activeFeatureId)?.properties.name || 'Active Site Boundary',
+      areaM2: activePolygonAnalysis.ellipsoidalAreaSqM,
+      areaHectares: activePolygonAnalysis.ellipsoidalAreaHectares,
+      areaAcres: activePolygonAnalysis.ellipsoidalAreaAcres,
+      perimeterM: activePolygonAnalysis.ellipsoidalPerimeterM,
+      centroidDms: centroidReport.dmsFormatted,
+      centroidUtm: centroidReport.utm.formatted,
+      bboxEnvelope: `EW: ${activePolygonAnalysis.bbox.eastWestSpanM}m x NS: ${activePolygonAnalysis.bbox.northSouthSpanM}m`
+    };
+  }
 
   const summaryStatements = [
     {

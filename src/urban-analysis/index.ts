@@ -1,131 +1,111 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * SiteLens Geospatial Site Intelligence Workstation - Urban Context & Morphology Module
+ * SiteLens Geospatial Site Intelligence Workstation - Urban Context & Morphology Module (M2.0)
  */
 
 import { UrbanContextSummary, ProvenancedMetric } from '../types';
+import { datasetRegistry, OSMUrbanSummaryData } from '../data-providers';
 
 /**
  * Queries OpenStreetMap Overpass API for real context elements around a site centroid
+ * Delegates to the unified M2.0 DatasetRegistry and OSMDataProvider
  */
 export async function fetchUrbanContext(
   latitude: number,
   longitude: number,
-  radiusMeters: number = 300
+  radiusMeters: number = 300,
+  options?: { signal?: AbortSignal; siteBoundary?: [number, number][]; bypassCache?: boolean }
 ): Promise<UrbanContextSummary> {
-  // Bounded query for building footprints, roads, amenities
-  const query = `
-    [out:json][timeout:15];
-    (
-      way["building"](around:${radiusMeters},${latitude},${longitude});
-      relation["building"](around:${radiusMeters},${latitude},${longitude});
-      way["highway"](around:${radiusMeters},${latitude},${longitude});
-      node["amenity"](around:${radiusMeters},${latitude},${longitude});
-      way["amenity"](around:${radiusMeters},${latitude},${longitude});
-      way["leisure"](around:${radiusMeters},${latitude},${longitude});
-    );
-    out tags 100;
-  `;
-
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
-
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      body: `data=${encodeURIComponent(query)}`,
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+    const dataset = await datasetRegistry.fetch<OSMUrbanSummaryData>(
+      'osm-overpass',
+      {
+        latitude,
+        longitude,
+        radiusMeters
       },
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!res.ok) {
-      throw new Error(`Overpass API responded with status ${res.status}`);
-    }
-
-    const data = await res.json();
-    const elements: any[] = data.elements || [];
-
-    let buildingCount = 0;
-    let roadCount = 0;
-    let amenityCount = 0;
-    let landuseCount = 0;
-
-    const items: UrbanContextSummary['items'] = [];
-
-    for (const el of elements) {
-      const tags = el.tags || {};
-      if (tags.building) {
-        buildingCount++;
-        if (tags.name && items.length < 15) {
-          items.push({
-            category: 'Building',
-            name: tags.name,
-            type: tags.building !== 'yes' ? tags.building : 'Structure',
-          });
-        }
-      } else if (tags.highway) {
-        roadCount++;
-        if (tags.name && items.length < 25) {
-          items.push({
-            category: 'Transportation',
-            name: tags.name,
-            type: tags.highway,
-          });
-        }
-      } else if (tags.amenity) {
-        amenityCount++;
-        if (items.length < 35) {
-          items.push({
-            category: 'Amenity',
-            name: tags.name || tags.amenity,
-            type: tags.amenity,
-          });
-        }
-      } else if (tags.leisure || tags.landuse) {
-        landuseCount++;
-        if (items.length < 40) {
-          items.push({
-            category: 'Open Space',
-            name: tags.name || tags.leisure || tags.landuse,
-            type: tags.leisure || tags.landuse,
-          });
-        }
+      {
+        radiusMeters,
+        center: [longitude, latitude],
+        signal: options?.signal,
+        siteBoundary: options?.siteBoundary,
+        bypassCache: options?.bypassCache,
+        timeoutMs: 16000
       }
+    );
+
+    if (dataset.status === 'unavailable' || dataset.status === 'error' || !dataset.data) {
+      return {
+        buildingCount: 0,
+        roadCount: 0,
+        amenityCount: 0,
+        landuseCount: 0,
+        sampledRadiusM: radiusMeters,
+        source: `${dataset.metadata.source} (${dataset.status})`,
+        loadedAt: dataset.metadata.retrievedAt,
+        items: [],
+        metrics: {
+          urban_status: {
+            id: 'urban-status',
+            name: 'urban_context_status',
+            label: 'Urban Context Service',
+            value: dataset.error?.message || 'Overpass service unavailable or rate limited',
+            formattedValue: dataset.status === 'unavailable' ? 'Offline / Rate Limited' : 'Query Failed',
+            unit: 'status',
+            classification: 'unavailable',
+            source: dataset.metadata.source,
+            calculationMethod: dataset.metadata.method,
+            spatialResolution: dataset.metadata.spatialResolution,
+            timestampOrReferencePeriod: dataset.metadata.retrievedAt,
+            limitations: dataset.metadata.limitations,
+            warning: dataset.error?.retryable ? 'Temporary server rate-limit. Query can be retried.' : undefined,
+            category: 'urban'
+          }
+        }
+      };
     }
+
+    const data = dataset.data;
+    const isTruncated = dataset.stats?.isTruncated || dataset.status === 'partial';
+
+    const items: UrbanContextSummary['items'] = data.elementsSummary.map(el => ({
+      category: el.category === 'building' ? 'Building' : (el.category === 'road' ? 'Transportation' : 'Amenity'),
+      name: el.name,
+      type: el.type
+    }));
 
     const metrics: Record<string, ProvenancedMetric> = {
       osm_buildings_nearby: {
         id: 'urban-bldg-count',
         name: 'nearby_building_footprints',
         label: 'Adjacent Building Footprints',
-        value: buildingCount,
-        formattedValue: `${buildingCount} structures`,
+        value: data.buildingCount,
+        formattedValue: `${data.buildingCount} structures${isTruncated ? ' (partial)' : ''}`,
         unit: 'count',
         classification: 'dataset-derived',
-        source: 'OpenStreetMap (ODbL License via Overpass API)',
-        calculationMethod: `Radial spatial query around centroid (${radiusMeters}m radius)`,
-        spatialResolution: 'Vector polygon/multipolygon geometry',
-        timestampOrReferencePeriod: 'Current OpenStreetMap live planet database',
-        limitations: 'Crowdsourced volunteer mapping. Building heights, uses, and completion rates may vary depending on local contributor activity.',
+        source: dataset.metadata.source,
+        calculationMethod: `Radial spatial query with full vector geometry around centroid (${radiusMeters}m radius)`,
+        spatialResolution: dataset.metadata.spatialResolution,
+        timestampOrReferencePeriod: dataset.metadata.timestampOrReferencePeriod,
+        limitations: isTruncated 
+          ? 'Query reached response size cap. Additional structures exist beyond this sample.' 
+          : dataset.metadata.limitations,
+        warning: isTruncated ? 'Partial coverage: query truncated by server limit.' : undefined,
         category: 'urban'
       },
       osm_roads_nearby: {
         id: 'urban-roads-count',
         name: 'nearby_transportation_links',
         label: 'Surrounding Road Network Segments',
-        value: roadCount,
-        formattedValue: `${roadCount} segments`,
+        value: data.roadCount,
+        formattedValue: `${data.roadCount} segments`,
         unit: 'count',
         classification: 'dataset-derived',
-        source: 'OpenStreetMap via Overpass API',
-        calculationMethod: `Highway tag enumeration within ${radiusMeters}m radius`,
+        source: dataset.metadata.source,
+        calculationMethod: `Highway tag enumeration with geometry within ${radiusMeters}m radius`,
         spatialResolution: 'Vector centerline polyline',
-        timestampOrReferencePeriod: 'Current OpenStreetMap live database',
+        timestampOrReferencePeriod: dataset.metadata.timestampOrReferencePeriod,
         limitations: 'Segments are partitioned at intersections and administrative boundaries; does not equate to unique continuous corridors.',
         category: 'urban'
       },
@@ -133,29 +113,29 @@ export async function fetchUrbanContext(
         id: 'urban-amenity-count',
         name: 'nearby_amenities_pois',
         label: 'Points of Interest & Amenities',
-        value: amenityCount,
-        formattedValue: `${amenityCount} POIs`,
+        value: data.amenityCount,
+        formattedValue: `${data.amenityCount} POIs`,
         unit: 'count',
         classification: 'dataset-derived',
-        source: 'OpenStreetMap POI database',
+        source: dataset.metadata.source,
         calculationMethod: `Amenity node/way query within ${radiusMeters}m radius`,
         spatialResolution: 'Point and polygon tags',
-        timestampOrReferencePeriod: 'Current OpenStreetMap',
-        limitations: 'Subject to commercial registration and survey freshness.',
+        timestampOrReferencePeriod: dataset.metadata.timestampOrReferencePeriod,
+        limitations: 'Subject to commercial registration and OpenStreetMap survey freshness.',
         category: 'urban'
       },
       pedestrian_accessibility_proxy: {
         id: 'urban-ped-proxy',
         name: 'pedestrian_permeability_proxy',
         label: 'Walkability & Permeability Indicator',
-        value: roadCount > 15 ? 'High Connectivity' : (roadCount > 5 ? 'Moderate Connectivity' : 'Low Connectivity'),
-        formattedValue: roadCount > 15 ? 'High (Dense urban fabric)' : (roadCount > 5 ? 'Moderate' : 'Low (Cul-de-sac / Sparse)'),
+        value: data.roadCount > 15 ? 'High Connectivity' : (data.roadCount > 5 ? 'Moderate Connectivity' : 'Low Connectivity'),
+        formattedValue: data.roadCount > 15 ? 'High (Dense urban fabric)' : (data.roadCount > 5 ? 'Moderate' : 'Low (Cul-de-sac / Sparse)'),
         unit: 'categorical proxy',
         classification: 'proxy',
         source: 'Morphological Street Density Heuristic',
-        calculationMethod: `Calculated from road segment density (${roadCount} segments in ${(Math.PI * Math.pow(radiusMeters, 2) / 10000).toFixed(1)} ha)`,
+        calculationMethod: `Calculated from road segment density (${data.roadCount} segments in ${(Math.PI * Math.pow(radiusMeters, 2) / 10000).toFixed(1)} ha)`,
         spatialResolution: `${radiusMeters}m buffer`,
-        timestampOrReferencePeriod: 'Derived from current OSM',
+        timestampOrReferencePeriod: 'Derived from live OSM geometry',
         limitations: 'PROXY INDICATOR: Does not represent empirical pedestrian footfall sensor data. True pedestrian activity depends on pavement quality, street vibrancy, microclimate, and demographic flows.',
         warning: 'Proxy metric: Not empirical footfall data.',
         category: 'urban'
@@ -163,15 +143,15 @@ export async function fetchUrbanContext(
     };
 
     return {
-      buildingCount,
-      roadCount,
-      amenityCount,
-      landuseCount,
+      buildingCount: data.buildingCount,
+      roadCount: data.roadCount,
+      amenityCount: data.amenityCount,
+      landuseCount: data.landuseCount,
       sampledRadiusM: radiusMeters,
-      source: 'OpenStreetMap via Overpass API (ODbL)',
-      loadedAt: new Date().toISOString(),
+      source: `${dataset.metadata.source} (${dataset.metadata.license.attributionStatement})`,
+      loadedAt: dataset.metadata.retrievedAt,
       items,
-      metrics,
+      metrics
     };
   } catch (err: any) {
     return {
@@ -180,7 +160,7 @@ export async function fetchUrbanContext(
       amenityCount: 0,
       landuseCount: 0,
       sampledRadiusM: radiusMeters,
-      source: 'OpenStreetMap (Request Offline / Fallback)',
+      source: 'OpenStreetMap (Client Error)',
       loadedAt: new Date().toISOString(),
       items: [],
       metrics: {
@@ -188,15 +168,15 @@ export async function fetchUrbanContext(
           id: 'urban-status',
           name: 'urban_context_status',
           label: 'Urban Context Service',
-          value: 'Overpass query timed out or unavailable',
-          formattedValue: 'Offline / Query Limit',
+          value: err.message || 'Unexpected failure querying urban context',
+          formattedValue: 'Error',
           unit: 'status',
           classification: 'unavailable',
-          source: 'Overpass API',
-          calculationMethod: 'REST API Request',
+          source: 'OpenStreetMap Overpass',
+          calculationMethod: 'Provider Query',
           spatialResolution: 'N/A',
           timestampOrReferencePeriod: new Date().toISOString(),
-          limitations: 'Public Overpass servers may experience rate limiting or heavy load. Can be re-queried at any time.',
+          limitations: 'Local client exception during query execution.',
           category: 'urban'
         }
       }

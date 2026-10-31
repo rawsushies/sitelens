@@ -103,7 +103,7 @@ export default function App() {
       saveProject(project).catch(err => console.warn('Auto-save warning:', err));
     }, 600);
     return () => clearTimeout(timer);
-  }, [project.features, project.name, project.activeFeatureId, project.center, project.zoom]);
+  }, [project]);
 
   // Compute active feature analyses
   const activeFeature = project.features.find(f => f.id === project.activeFeatureId) || null;

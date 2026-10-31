@@ -302,10 +302,48 @@ describe('History Engine No-Op Prevention & Deep Immutability', () => {
 });
 
 describe('Project Persistence & Storage Reload Integration', () => {
-  it('correctly saves and loads project across simulated browser storage', async () => {
-    // Mock localStorage in test environment
+  it('correctly saves and reloads project through real IndexedDB database', async () => {
+    const { indexedDB: fakeIDB } = await import('fake-indexeddb');
+    const originalIDB = globalThis.indexedDB;
+    (globalThis as any).indexedDB = fakeIDB;
+
+    try {
+      const { saveProject, loadAllProjects, deleteProject } = await import('../projects');
+      const testProject = createDefaultProject();
+      testProject.id = `idb-test-${Date.now()}`;
+      testProject.name = 'High-Precision BIM Site Study';
+      testProject.description = 'Testing real IndexedDB store persistence and reloading';
+      testProject.metadata.client = 'Geospatial Engineering Council';
+      testProject.metadata.siteLocationName = 'Greenwich Meridian Test Bed';
+
+      // 1. Save project to real IndexedDB
+      await saveProject(testProject);
+
+      // 2. Reload projects from IndexedDB
+      const loaded = await loadAllProjects();
+      expect(loaded.length).toBeGreaterThan(0);
+      const retrieved = loaded.find(p => p.id === testProject.id);
+      expect(retrieved).toBeDefined();
+      expect(retrieved?.name).toBe('High-Precision BIM Site Study');
+      expect(retrieved?.description).toBe('Testing real IndexedDB store persistence and reloading');
+      expect(retrieved?.metadata.client).toBe('Geospatial Engineering Council');
+      expect(retrieved?.features.length).toBe(testProject.features.length);
+
+      // 3. Delete and confirm removal
+      await deleteProject(testProject.id);
+      const afterDelete = await loadAllProjects();
+      expect(afterDelete.some(p => p.id === testProject.id)).toBe(false);
+    } finally {
+      (globalThis as any).indexedDB = originalIDB;
+    }
+  });
+
+  it('correctly falls back to localStorage mirror when IndexedDB is unavailable', async () => {
+    // Mock localStorage in test environment and ensure indexedDB is absent
     const storageMock: Record<string, string> = {};
     const originalLocalStorage = globalThis.localStorage;
+    const originalIDB = globalThis.indexedDB;
+
     globalThis.localStorage = {
       getItem: (key: string) => storageMock[key] ?? null,
       setItem: (key: string, value: string) => { storageMock[key] = value; },
@@ -314,11 +352,12 @@ describe('Project Persistence & Storage Reload Integration', () => {
       key: (i: number) => Object.keys(storageMock)[i] ?? null,
       length: 0
     } as any;
+    delete (globalThis as any).indexedDB;
 
     try {
       const { saveProject, loadAllProjects } = await import('../projects');
       const testProject = createDefaultProject();
-      testProject.name = 'Persistence Test Project Alpha';
+      testProject.name = 'Fallback Storage Project Beta';
 
       // Save project
       await saveProject(testProject);
@@ -327,14 +366,15 @@ describe('Project Persistence & Storage Reload Integration', () => {
       expect(storageMock['sitelens_projects_backup']).toBeDefined();
       const backupProjects = JSON.parse(storageMock['sitelens_projects_backup']);
       expect(backupProjects.length).toBeGreaterThan(0);
-      expect(backupProjects[0].name).toBe('Persistence Test Project Alpha');
+      expect(backupProjects[0].name).toBe('Fallback Storage Project Beta');
 
       // Reload all projects
       const loaded = await loadAllProjects();
       expect(loaded.length).toBeGreaterThan(0);
-      expect(loaded.some(p => p.name === 'Persistence Test Project Alpha')).toBe(true);
+      expect(loaded.some(p => p.name === 'Fallback Storage Project Beta')).toBe(true);
     } finally {
       globalThis.localStorage = originalLocalStorage;
+      (globalThis as any).indexedDB = originalIDB;
     }
   });
 });

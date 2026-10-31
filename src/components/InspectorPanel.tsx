@@ -536,9 +536,9 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <MetricCard metric={climateData.metrics.relative_humidity} />
-                    <MetricCard metric={climateData.metrics.wind_speed_10m} />
+                    <MetricCard metric={climateData.metrics.wind_speed || climateData.metrics.wind_speed_10m} />
                   </div>
-                  <MetricCard metric={climateData.metrics.elevation_dem} />
+                  <MetricCard metric={climateData.metrics.terrain_elevation || climateData.metrics.elevation_dem} />
                 </>
               ) : (
                 <div className="text-slate-500 text-center py-2 font-mono text-[11px]">
