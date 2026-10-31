@@ -13,6 +13,7 @@ import { ToolMode } from './ToolBar';
 import { BASEMAP_OPTIONS } from '../map/basemaps';
 import { calculateGeodesicDistance, deleteVertexFromRing, insertVertexIntoRing } from '../geometry';
 import { Compass, AlertTriangle, Check, X } from 'lucide-react';
+import { TopographicDataset } from '../topography/contours';
 
 // Setup MapLibre web worker reliably
 if (typeof window !== 'undefined' && maplibregl.setWorkerUrl) {
@@ -40,6 +41,8 @@ interface MapCanvasProps {
   completeTrigger?: number;
   cancelTrigger?: number;
   onDrawingActiveChange?: (isActive: boolean) => void;
+  showContours?: boolean;
+  topographicDataset?: TopographicDataset | null;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -56,6 +59,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   completeTrigger = 0,
   cancelTrigger = 0,
   onDrawingActiveChange,
+  showContours = false,
+  topographicDataset = null,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -483,6 +488,53 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       {/* SVG Interactive Geometry & Drawing Overlay */}
       <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
+        {/* 0. Topographic Contours & Hypsometric Elevation Layer (Reference Image 2) */}
+        {showContours && topographicDataset && (
+          <g className="topographic-contours">
+            {topographicDataset.contours.map((contour) => {
+              const screenPoints = contour.coordinates
+                .map((c) => projectToPixel(c))
+                .filter(Boolean) as { x: number; y: number }[];
+
+              if (screenPoints.length < 2) return null;
+
+              const pathD = screenPoints.reduce(
+                (acc, pt, i) => `${acc} ${i === 0 ? 'M' : 'L'} ${pt.x} ${pt.y}`,
+                ''
+              );
+
+              return (
+                <g key={contour.id}>
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke={contour.color}
+                    strokeWidth={contour.strokeWidth}
+                    strokeOpacity={contour.isIndexContour ? 0.9 : 0.6}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  {/* Subtle Elevation Index Label on Long Contours */}
+                  {contour.isIndexContour && screenPoints.length > 7 && (
+                    <text
+                      x={screenPoints[Math.floor(screenPoints.length / 2)].x}
+                      y={screenPoints[Math.floor(screenPoints.length / 2)].y - 3}
+                      fill={contour.color}
+                      fontSize="9"
+                      fontWeight="600"
+                      fontFamily="Inter"
+                      textAnchor="middle"
+                      className="select-none pointer-events-none drop-shadow"
+                    >
+                      {contour.elevationM}m
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        )}
+
         {/* 1. Render Existing Features */}
         {project.features.map((feature) => {
           const isSelected = feature.id === project.activeFeatureId;

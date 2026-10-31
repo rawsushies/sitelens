@@ -17,7 +17,8 @@ import {
   FileSpreadsheet, 
   ChevronDown,
   Sun,
-  Moon
+  Moon,
+  Mountain
 } from 'lucide-react';
 import { SiteProject, BasemapId } from '../types';
 import { BASEMAP_OPTIONS } from '../map/basemaps';
@@ -37,6 +38,8 @@ interface TopBarProps {
   onExportGeoJSON: () => void;
   onExportCSV: () => void;
   isSaving: boolean;
+  showContours?: boolean;
+  onToggleContours?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -49,7 +52,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenReportModal,
   onExportGeoJSON,
   onExportCSV,
-  isSaving
+  isSaving,
+  showContours = false,
+  onToggleContours
 }) => {
   const { theme, toggleTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
@@ -140,7 +145,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const currentBasemap = BASEMAP_OPTIONS.find(b => b.id === project.basemap) || BASEMAP_OPTIONS[0];
 
   return (
-    <header className="h-12 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)] px-3 flex items-center justify-between text-xs select-none z-30 transition-colors duration-150">
+    <header className="h-11 glass-panel rounded-xl px-3 flex items-center justify-between text-xs select-none shadow-2xl transition-all duration-150">
       {/* Brand & Project Identity */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2.5 pr-3 border-r border-[var(--border-subtle)]">

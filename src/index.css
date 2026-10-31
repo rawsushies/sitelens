@@ -22,6 +22,22 @@
     --brand-subtle: rgba(124, 92, 255, 0.12);
     --brand-border: rgba(124, 92, 255, 0.35);
 
+    /* Glassmorphism Surface Tokens (Floating HUD) */
+    --bg-glass: rgba(16, 23, 38, 0.80);
+    --bg-glass-card: rgba(22, 32, 50, 0.75);
+    --bg-glass-subtle: rgba(27, 39, 62, 0.50);
+    --border-glass: rgba(255, 255, 255, 0.09);
+    --border-glass-highlight: rgba(124, 92, 255, 0.30);
+    --shadow-glass: 0 16px 40px -8px rgba(0, 0, 0, 0.48), 0 0 0 1px rgba(255, 255, 255, 0.05);
+
+    /* Topographic Hypsometric Color Ramp */
+    --topo-c1: #10B981;
+    --topo-c2: #06B6D4;
+    --topo-c3: #3B82F6;
+    --topo-c4: #7C5CFF;
+    --topo-c5: #D946EF;
+    --topo-c6: #F59E0B;
+
     /* Status Colors */
     --status-success: #10B981;
     --status-warning: #F59E0B;
@@ -29,8 +45,8 @@
     --status-info: #3B82F6;
 
     /* Map Controls */
-    --map-ctrl-bg: rgba(10, 14, 23, 0.90);
-    --map-ctrl-border: #1E293B;
+    --map-ctrl-bg: rgba(10, 14, 23, 0.85);
+    --map-ctrl-border: rgba(255, 255, 255, 0.10);
     --map-ctrl-text: #94A3B8;
     --map-ctrl-link: #7C5CFF;
   }
@@ -55,6 +71,22 @@
     --brand-subtle: rgba(124, 92, 255, 0.10);
     --brand-border: rgba(124, 92, 255, 0.30);
 
+    /* Glassmorphism Surface Tokens (Floating HUD) */
+    --bg-glass: rgba(255, 255, 255, 0.88);
+    --bg-glass-card: rgba(248, 250, 252, 0.90);
+    --bg-glass-subtle: rgba(241, 245, 249, 0.75);
+    --border-glass: rgba(0, 0, 0, 0.08);
+    --border-glass-highlight: rgba(124, 92, 255, 0.25);
+    --shadow-glass: 0 16px 36px -8px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.04);
+
+    /* Topographic Hypsometric Color Ramp */
+    --topo-c1: #059669;
+    --topo-c2: #0891B2;
+    --topo-c3: #2563EB;
+    --topo-c4: #7C5CFF;
+    --topo-c5: #C026D3;
+    --topo-c6: #D97706;
+
     /* Status Colors */
     --status-success: #059669;
     --status-warning: #D97706;
@@ -62,8 +94,8 @@
     --status-info: #2563EB;
 
     /* Map Controls */
-    --map-ctrl-bg: rgba(255, 255, 255, 0.92);
-    --map-ctrl-border: #CBD5E1;
+    --map-ctrl-bg: rgba(255, 255, 255, 0.90);
+    --map-ctrl-border: rgba(0, 0, 0, 0.08);
     --map-ctrl-text: #475569;
     --map-ctrl-link: #7C5CFF;
   }
@@ -94,6 +126,29 @@
   .tabular-nums {
     font-feature-settings: 'tnum' 1;
     font-variant-numeric: tabular-nums;
+  }
+
+  /* Glassmorphism Surface Classes */
+  .glass-panel {
+    background: var(--bg-glass);
+    border: 1px solid var(--border-glass);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    box-shadow: var(--shadow-glass);
+  }
+
+  .glass-card {
+    background: var(--bg-glass-card);
+    border: 1px solid var(--border-glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .glass-subtle {
+    background: var(--bg-glass-subtle);
+    border: 1px solid var(--border-glass);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
   }
 }
 
