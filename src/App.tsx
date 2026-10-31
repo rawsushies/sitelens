@@ -250,8 +250,14 @@ export default function App() {
     setCurrentTool('select');
   };
 
-  const handleUpdateFeatureGeometry = (featureId: string, newCoordinates: any) => {
+  const handleStartGeometryTransaction = () => {
     pushHistory(project.features);
+  };
+
+  const handleUpdateFeatureGeometry = (featureId: string, newCoordinates: any, recordHistory = true) => {
+    if (recordHistory) {
+      pushHistory(project.features);
+    }
     setProject(prev => ({
       ...prev,
       features: prev.features.map(f => {
@@ -309,24 +315,35 @@ export default function App() {
   // Global hotkeys
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger hotkeys if inside text input
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
+      // Don't trigger hotkeys if inside input, textarea, select or contentEditable
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)
+      ) {
         return;
       }
 
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
         if (e.shiftKey) {
           handleRedo();
         } else {
           handleUndo();
         }
         e.preventDefault();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) {
         handleRedo();
         e.preventDefault();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (project.activeFeatureId) {
           handleDeleteFeature(project.activeFeatureId);
+        }
+      } else if (e.key === 'Escape') {
+        if (project.activeFeatureId) {
+          setProject(p => ({ ...p, activeFeatureId: null }));
+        }
+        if (currentTool !== 'select') {
+          setCurrentTool('select');
         }
       } else if (e.key === 'v' || e.key === 'V') {
         setCurrentTool('select');
@@ -345,7 +362,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [project.activeFeatureId, history, redoStack]);
+  }, [project.activeFeatureId, currentTool, history, redoStack]);
 
   // Aggregate comprehensive dossier
   const dossier = generateSiteIntelligenceReport(
@@ -399,6 +416,8 @@ export default function App() {
         <MapCanvas
           project={project}
           currentTool={currentTool}
+          onSelectTool={setCurrentTool}
+          onStartGeometryTransaction={handleStartGeometryTransaction}
           onUpdateFeatureGeometry={handleUpdateFeatureGeometry}
           onCreateFeature={handleCreateFeature}
           onSelectFeature={(id) => setProject(p => ({ ...p, activeFeatureId: id }))}

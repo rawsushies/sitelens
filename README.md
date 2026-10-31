@@ -103,17 +103,40 @@ src/
 
 ---
 
-## 🧪 Unit Tests
+## ⌨️ CAD/GIS Interaction & Shortcut System
 
-SiteLens includes unit tests implemented with **Vitest**:
-- Geodesic distance on WGS84 matching known ellipsoidal baseline
-- WGS84 ellipsoidal polygon area verified against benchmark geodetic quadrilaterals
-- Bowtie self-intersecting polygon topology detection
-- Multi-segment line analysis and forward azimuths
-- Decimal degree to sexagesimal DMS conversion
-- Global UTM zone determination across longitudes
-- Proj4 UTM coordinate transformations
-- Astronomical solar altitude, sunrise, sunset, and shadow multipliers
+| Tool / Action | Shortcut | Description | Interaction Behavior |
+| :--- | :---: | :--- | :--- |
+| **Select / Inspect** | `V` | Inspect feature & manipulate vertex handles | Click to select, click blank map canvas to deselect, drag vertices |
+| **Pan Camera** | `H` | Free camera navigation | Click and drag map canvas |
+| **Site Boundary Polygon** | `P` | Draw closed WGS84 site boundary | Click to place nodes, click start point or double-click to close |
+| **Distance Polyline** | `L` | Measure multi-segment geodesic paths | Click to place nodes, double-click or Enter to finish |
+| **Site Width Transect**| `T` | User-defined cross-sectional site width | Click start and end points across parcel |
+| **Datum / Spot Point** | `D` | Place spot coordinate / elevation datum | Single-click places point and immediately returns to Select |
+| **Cancel Drawing** | `Esc` | Cancel in-progress geometry or deselect | Clears in-progress nodes; switches to Select mode |
+| **Complete Drawing** | `Enter` | Complete polygon ($\ge 3$ pts) or line ($\ge 2$ pts) | Commits geometry, computes ellipsoidal metrics, returns to Select |
+| **Delete Geometry** | `Del` / `Backspace` | Delete active feature | Deletes selected feature and records to undo history |
+| **Undo** | `Ctrl+Z` / `Cmd+Z` | Undo geometry operation | Single-step undo for creation, vertex moves, midpoints, and deletion |
+| **Redo** | `Ctrl+Y` / `Cmd+Shift+Z`| Redo geometry operation | Restores undone actions |
+| **Vertex Deletion** | Right-Click | Delete vertex from polygon/line | Right-click node handle (keeps minimum 3 nodes for polygons) |
+| **Vertex Insertion** | Click `+` | Insert midpoint node | Inserts vertex between adjacent nodes and recalculates geometry |
+
+---
+
+## 🧪 Unit & Regression Tests
+
+SiteLens includes 15 automated unit and regression tests running in **Vitest**:
+- **Sequential Polygon & Polyline Creation**: Verifies multiple distinct polygons and lines can be created sequentially without overwriting or state corruption.
+- **Tool Switching**: Clean cancellation of incomplete drawings without corrupting existing features.
+- **Selection & Deselection**: Direct selection, canvas deselect, and feature switching.
+- **Vertex Manipulation**: Dragging vertices dynamically updates WGS84 ellipsoidal area, perimeter, and preserves ring closure.
+- **Midpoint Insertion**: Dynamically adds nodes to polygon rings and polylines with immediate measurement updates.
+- **Vertex Deletion**: Removes nodes while preserving valid closed simple polygons.
+- **Undo/Redo Transactions**: Verifies full multi-step history transactions for creations, moves, insertions, and deletions.
+- **Geodesic Distance & Area**: Charles Karney WGS84 geodesic algorithms validated against ellipsoidal baselines.
+- **Topology Integrity**: Detection of bowtie self-intersecting polygons.
+- **Coordinate Reference Systems**: Sexagesimal DMS conversions, global UTM zone calculations, and Proj4 transformations.
+- **Astronomical Solar Model**: Jean Meeus celestial algorithms for solar altitude, azimuth, and day length.
 
 To run the test suite:
 ```bash
