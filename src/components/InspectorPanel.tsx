@@ -17,6 +17,7 @@ import {
 } from '../types';
 import { MetricCard } from './MetricCard';
 import { formatCoordinatePair } from '../coordinates';
+import { TopographicDataset, HypsometricRampName, HYPSOMETRIC_RAMPS } from '../topography/contours';
 import { 
   Info, 
   Ruler, 
@@ -28,10 +29,12 @@ import {
   Trash2, 
   AlertTriangle, 
   ChevronRight, 
+  ChevronLeft,
   Split, 
   RefreshCw,
   CloudRain,
-  Building2
+  Building2,
+  Mountain
 } from 'lucide-react';
 
 interface InspectorPanelProps {
@@ -50,9 +53,19 @@ interface InspectorPanelProps {
   onSelectFeature: (featureId: string | null) => void;
   onDeleteFeature: (featureId: string) => void;
   onUpdateFeatureName: (featureId: string, name: string) => void;
+  showContours?: boolean;
+  onToggleContours?: () => void;
+  topographicDataset?: TopographicDataset | null;
+  isLoadingContours?: boolean;
+  contourError?: string | null;
+  contourIntervalM?: number;
+  onChangeContourInterval?: (intervalM: number) => void;
+  contourRamp?: HypsometricRampName;
+  onChangeContourRamp?: (ramp: HypsometricRampName) => void;
+  onRefreshContours?: () => void;
 }
 
-type InspectorTab = 'overview' | 'geometry' | 'coordinates' | 'environment' | 'features';
+type InspectorTab = 'overview' | 'geometry' | 'coordinates' | 'topography' | 'environment' | 'features';
 
 export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   project,
@@ -70,9 +83,20 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   onSelectFeature,
   onDeleteFeature,
   onUpdateFeatureName,
+  showContours = false,
+  onToggleContours,
+  topographicDataset = null,
+  isLoadingContours = false,
+  contourError = null,
+  contourIntervalM = 2,
+  onChangeContourInterval,
+  contourRamp = 'kepler',
+  onChangeContourRamp,
+  onRefreshContours
 }) => {
   const [activeTab, setActiveTab] = useState<InspectorTab>('overview');
   const [copiedText, setCopiedText] = useState<string | null>(null);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -82,33 +106,60 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
 
   const transects = project.features.filter(f => f.properties.featureType === 'transect');
 
+  if (isCollapsed) {
+    return (
+      <div className="flex items-start z-20 select-none">
+        <button
+          onClick={() => setIsCollapsed(false)}
+          className="glass-panel rounded-xl p-2.5 text-[var(--text-secondary)] hover:text-[#7C5CFF] transition-all flex items-center gap-1.5 shadow-xl"
+          title="Expand Site Intelligence Inspector"
+          aria-label="Expand Inspector"
+        >
+          <ChevronLeft className="w-4 h-4 text-[#7C5CFF]" />
+          <span className="text-[11px] font-medium pr-1">Inspector</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <aside className="w-[390px] h-full bg-[var(--bg-surface)] border-l border-[var(--border-subtle)] flex flex-col z-20 text-xs text-[var(--text-primary)] select-none transition-colors duration-150">
+    <aside className="w-[390px] h-full glass-panel rounded-xl overflow-hidden flex flex-col z-20 text-xs text-[var(--text-primary)] select-none transition-all duration-150">
       {/* Tab Navigation */}
-      <div className="flex border-b border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-1 pt-1 overflow-x-auto no-scrollbar">
-        {[
-          { id: 'overview', label: 'Overview', icon: <Info className="w-3.5 h-3.5" /> },
-          { id: 'geometry', label: 'Geometry', icon: <Ruler className="w-3.5 h-3.5" /> },
-          { id: 'coordinates', label: 'Coordinates', icon: <Compass className="w-3.5 h-3.5" /> },
-          { id: 'environment', label: 'Context', icon: <Sun className="w-3.5 h-3.5" /> },
-          { id: 'features', label: `Layers (${project.features.length})`, icon: <Layers className="w-3.5 h-3.5" /> }
-        ].map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as InspectorTab)}
-              className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-medium whitespace-nowrap border-b-2 transition-all ${
-                isActive
-                  ? 'border-[#7C5CFF] text-[#7C5CFF] bg-[var(--bg-surface)]'
-                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]'
-              }`}
-            >
-              {tab.icon}
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+      <div className="flex items-center justify-between border-b border-[var(--border-glass)] bg-[var(--bg-glass-subtle)] px-1 pt-1">
+        <div className="flex overflow-x-auto no-scrollbar">
+          {[
+            { id: 'overview', label: 'Overview', icon: <Info className="w-3.5 h-3.5" /> },
+            { id: 'geometry', label: 'Geometry', icon: <Ruler className="w-3.5 h-3.5" /> },
+            { id: 'coordinates', label: 'Coords', icon: <Compass className="w-3.5 h-3.5" /> },
+            { id: 'topography', label: 'Topo', icon: <Mountain className="w-3.5 h-3.5" /> },
+            { id: 'environment', label: 'Context', icon: <Sun className="w-3.5 h-3.5" /> },
+            { id: 'features', label: `Layers (${project.features.length})`, icon: <Layers className="w-3.5 h-3.5" /> }
+          ].map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as InspectorTab)}
+                className={`flex items-center gap-1 px-2.5 py-2 text-[11px] font-medium whitespace-nowrap border-b-2 transition-all ${
+                  isActive
+                    ? 'border-[#7C5CFF] text-[#7C5CFF] bg-[var(--bg-surface)]/60'
+                    : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)]/50'
+                }`}
+              >
+                {tab.icon}
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        <button
+          onClick={() => setIsCollapsed(true)}
+          className="p-1.5 mr-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] rounded transition-colors shrink-0"
+          title="Collapse Inspector Drawer"
+          aria-label="Collapse Inspector"
+        >
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* Main Tab Content */}
@@ -416,6 +467,165 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
             ) : (
               <div className="text-center text-[var(--text-muted)] py-6">
                 Select a geometry on the map to inspect geodetic and projected coordinates.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 3.5: TOPOGRAPHY & CONTOURS */}
+        {activeTab === 'topography' && (
+          <div className="space-y-3">
+            {/* Layer Header & Toggle */}
+            <div className="p-3 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-[11px] uppercase text-[#7C5CFF] font-semibold tracking-wider">
+                  <Mountain className="w-3.5 h-3.5" />
+                  <span>Topographic Contours (DEM)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {onRefreshContours && (
+                    <button
+                      onClick={onRefreshContours}
+                      disabled={isLoadingContours}
+                      className="p-1 bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-hover)] border border-[var(--border-subtle)] rounded text-[var(--text-secondary)] transition-colors"
+                      title="Re-sample DEM Elevation Grid"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isLoadingContours ? 'animate-spin text-[#7C5CFF]' : ''}`} />
+                    </button>
+                  )}
+                  {onToggleContours && (
+                    <button
+                      onClick={onToggleContours}
+                      className={`px-2.5 py-1 rounded text-[10px] font-medium border transition-colors ${
+                        showContours
+                          ? 'bg-[#7C5CFF] border-[#7C5CFF] text-white'
+                          : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                      }`}
+                    >
+                      {showContours ? 'Overlay Active' : 'Enable Overlay'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Interval & Hypsometric Ramp Controls */}
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[var(--border-subtle)]">
+                <div>
+                  <label className="block text-[10px] text-[var(--text-muted)] uppercase mb-1">
+                    Contour Interval
+                  </label>
+                  <select
+                    value={contourIntervalM}
+                    onChange={(e) => onChangeContourInterval && onChangeContourInterval(Number(e.target.value))}
+                    className="w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded px-2 py-1 text-[11px] text-[var(--text-primary)] tabular-nums outline-none focus:border-[#7C5CFF]"
+                  >
+                    <option value={1}>1.0 m (Fine)</option>
+                    <option value={2}>2.0 m (Standard)</option>
+                    <option value={5}>5.0 m (Medium)</option>
+                    <option value={10}>10.0 m (Coarse)</option>
+                    <option value={25}>25.0 m (Regional)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-[var(--text-muted)] uppercase mb-1">
+                    Hypsometric Ramp
+                  </label>
+                  <select
+                    value={contourRamp}
+                    onChange={(e) => onChangeContourRamp && onChangeContourRamp(e.target.value as HypsometricRampName)}
+                    className="w-full bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded px-2 py-1 text-[11px] text-[var(--text-primary)] outline-none focus:border-[#7C5CFF]"
+                  >
+                    {Object.entries(HYPSOMETRIC_RAMPS).map(([key, val]) => (
+                      <option key={key} value={key}>
+                        {val.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Loading / Error / Dataset Stats */}
+            {isLoadingContours ? (
+              <div className="p-4 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded text-center space-y-2">
+                <div className="w-4 h-4 border-2 border-[#7C5CFF] border-t-transparent rounded-full animate-spin mx-auto" />
+                <div className="text-[11px] text-[var(--text-secondary)]">
+                  Sampling Open-Meteo DEM surface grid...
+                </div>
+              </div>
+            ) : contourError ? (
+              <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded text-rose-400 text-[11px] space-y-1">
+                <div className="font-semibold flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>DEM Elevation Data Unavailable</span>
+                </div>
+                <div className="text-[10px] text-[var(--text-secondary)]">{contourError}</div>
+              </div>
+            ) : topographicDataset ? (
+              <>
+                {/* Relief Summary KPI Grid */}
+                <div className="grid grid-cols-2 gap-2 tabular-nums">
+                  <div className="bg-[var(--bg-surface-secondary)] p-2.5 rounded border border-[var(--border-subtle)]">
+                    <div className="text-[10px] text-[var(--text-muted)]">ELEVATION RANGE</div>
+                    <div className="text-sm font-semibold text-[var(--text-primary)] mt-0.5">
+                      {topographicDataset.minElevationM.toFixed(1)}m – {topographicDataset.maxElevationM.toFixed(1)}m
+                    </div>
+                    <div className="text-[10px] text-[var(--text-secondary)]">
+                      Mean: {topographicDataset.meanElevationM.toFixed(1)} m ASL
+                    </div>
+                  </div>
+
+                  <div className="bg-[var(--bg-surface-secondary)] p-2.5 rounded border border-[var(--border-subtle)]">
+                    <div className="text-[10px] text-[var(--text-muted)]">VERTICAL RELIEF</div>
+                    <div className="text-sm font-semibold text-[#7C5CFF] mt-0.5">
+                      {topographicDataset.reliefM.toFixed(1)} m
+                    </div>
+                    <div className="text-[10px] text-[var(--text-secondary)]">
+                      {topographicDataset.contours.length} isolines ({topographicDataset.totalLengthKm} km)
+                    </div>
+                  </div>
+                </div>
+
+                {/* Hypsometric Legend */}
+                <div className="p-3 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded space-y-2">
+                  <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-medium">
+                    <span>Hypsometric Elevation Scale</span>
+                    <span className="tabular-nums">
+                      {topographicDataset.validSampleCount}/{topographicDataset.totalSampleCount} DEM nodes
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 pt-1">
+                    {topographicDataset.legend.slice().reverse().map((bin, i) => (
+                      <div key={i} className="flex items-center justify-between text-[11px] tabular-nums">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-3.5 h-2 rounded-xs shrink-0"
+                            style={{ backgroundColor: bin.color }}
+                          />
+                          <span className="text-[var(--text-primary)] font-medium">{bin.label}</span>
+                        </div>
+                        <span className="text-[10px] text-[var(--text-muted)]">EGM96 MSL</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Provenance & Limitations Disclosure */}
+                <div className="p-2.5 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded space-y-1 text-[10px] text-[var(--text-muted)]">
+                  <div className="text-[var(--text-secondary)] font-medium">
+                    Source: {topographicDataset.metadata.source}
+                  </div>
+                  <div>CRS: {topographicDataset.metadata.crs}</div>
+                  <div>Method: {topographicDataset.metadata.method}</div>
+                  <div className="pt-1 text-[var(--text-muted)] leading-relaxed">
+                    {topographicDataset.metadata.limitations}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="p-4 bg-[var(--bg-surface-secondary)] border border-[var(--border-subtle)] rounded text-center text-[var(--text-muted)] text-[11px]">
+                Enable the Contours overlay to sample genuine DEM surface heights and generate topographic isolines.
               </div>
             )}
           </div>

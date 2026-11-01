@@ -23,7 +23,7 @@ export const BottomBar: React.FC<BottomBarProps> = ({
   const report = inspectCoordinates(activePoint[0], activePoint[1]);
 
   return (
-    <footer className="h-7 bg-[var(--bg-surface)] border-t border-[var(--border-subtle)] px-3 flex items-center justify-between text-[11px] text-[var(--text-secondary)] select-none z-30 transition-colors duration-150">
+    <footer className="h-8 glass-panel rounded-lg px-3.5 flex items-center justify-between gap-4 text-[11px] text-[var(--text-secondary)] select-none z-30 transition-all duration-150">
       {/* Left: Coordinate Telemetry with Tabular Alignment */}
       <div className="flex items-center gap-3.5">
         {/* WGS84 Decimal Degrees */}

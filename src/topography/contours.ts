@@ -9,6 +9,7 @@
 
 import { ElevationGrid } from './elevation-grid';
 import { calculateGeodesicDistance } from '../geometry';
+import { DatasetMetadata } from '../data-providers/types';
 
 export interface TopographicContourLine {
   id: string;
@@ -30,10 +31,15 @@ export interface TopographicDataset {
   contours: TopographicContourLine[];
   minElevationM: number;
   maxElevationM: number;
+  meanElevationM: number;
+  reliefM: number;
   intervalM: number;
   indexIntervalM: number;
   totalLengthKm: number;
+  validSampleCount: number;
+  totalSampleCount: number;
   legend: HypsometricLegendBin[];
+  metadata: DatasetMetadata;
 }
 
 export type HypsometricRampName = 'kepler' | 'terrain' | 'spectral' | 'minimal';
@@ -69,7 +75,10 @@ export function getHypsometricColor(
 ): string {
   const ramp = HYPSOMETRIC_RAMPS[rampName] || HYPSOMETRIC_RAMPS.kepler;
   const colors = ramp.colors;
-  const range = maxElev - minElev || 1;
+  const range = maxElev - minElev;
+  if (range <= 1e-6) {
+    return colors[0];
+  }
   const t = Math.max(0, Math.min(1, (elevation - minElev) / range));
 
   const idx = t * (colors.length - 1);
@@ -100,32 +109,91 @@ function interpolateColor(c1: string, c2: string, factor: number): string {
 }
 
 /**
- * Marching Squares isocontour line segment generator
+ * Linearly interpolates fractional position along an edge between vA and vB for target level
+ */
+function interpolateFraction(level: number, vA: number, vB: number): number {
+  const diff = vB - vA;
+  if (Math.abs(diff) < 1e-9) return 0.5;
+  return Math.max(0, Math.min(1, (level - vA) / diff));
+}
+
+/**
+ * Marching Squares isocontour line segment generator.
+ * Safely skips cells with unavailable (null) DEM vertices and handles flat/zero-relief terrain.
  */
 export function generateContours(
   grid: ElevationGrid,
-  intervalM: number = 5,
+  intervalM: number = 2,
   rampName: HypsometricRampName = 'kepler'
 ): TopographicDataset {
-  const { bounds, cols, rows, cellWidthDeg, cellHeightDeg, values, minElevationM, maxElevationM } = grid;
+  const {
+    bounds,
+    cols,
+    rows,
+    cellWidthDeg,
+    cellHeightDeg,
+    values,
+    minElevationM,
+    maxElevationM,
+    meanElevationM,
+    reliefM,
+    validSampleCount,
+    totalSampleCount,
+    metadata
+  } = grid;
 
-  // Calculate clean contour levels
-  const startLevel = Math.ceil(minElevationM / intervalM) * intervalM;
-  const endLevel = Math.floor(maxElevationM / intervalM) * intervalM;
+  const safeInterval = Math.max(0.5, intervalM);
+  const indexIntervalM = safeInterval * 5;
 
-  const levels: number[] = [];
-  for (let lvl = startLevel; lvl <= endLevel; lvl += intervalM) {
-    levels.push(Math.round(lvl * 10) / 10);
+  // Handle flat terrain / zero relief cleanly without division by zero or infinite loops
+  if (reliefM < safeInterval || minElevationM === maxElevationM) {
+    const flatColor = getHypsometricColor(minElevationM, minElevationM, maxElevationM, rampName);
+    return {
+      contours: [],
+      minElevationM,
+      maxElevationM,
+      meanElevationM,
+      reliefM,
+      intervalM: safeInterval,
+      indexIntervalM,
+      totalLengthKm: 0,
+      validSampleCount,
+      totalSampleCount,
+      legend: [
+        {
+          elevationM: minElevationM,
+          color: flatColor,
+          label: `${minElevationM.toFixed(1)} m`
+        }
+      ],
+      metadata
+    };
   }
 
-  // Index contour interval is typically 5x standard interval
-  const indexIntervalM = intervalM * 5;
+  // Calculate clean contour levels strictly inside [minElevationM, maxElevationM]
+  const startLevel = Math.ceil(minElevationM / safeInterval) * safeInterval;
+  const endLevel = Math.floor(maxElevationM / safeInterval) * safeInterval;
+
+  const levels: number[] = [];
+  for (let lvl = startLevel; lvl <= endLevel + 1e-6; lvl += safeInterval) {
+    levels.push(Math.round(lvl * 100) / 100);
+  }
 
   const contours: TopographicContourLine[] = [];
   let totalLengthM = 0;
 
+  // Dynamic tolerance based on grid cell dimensions so segments at any geographic scale chain cleanly
+  const cellDiagSq = cellWidthDeg * cellWidthDeg + cellHeightDeg * cellHeightDeg;
+  const chainTolerance = Math.max(1e-7, Math.sqrt(cellDiagSq) * 0.02);
+
   for (const level of levels) {
-    const isIndex = Math.abs(level % indexIntervalM) < 0.001 || level === startLevel || level === endLevel;
+    const rem = Math.abs(level % indexIntervalM);
+    const isIndex =
+      rem < 1e-4 ||
+      Math.abs(rem - indexIntervalM) < 1e-4 ||
+      Math.abs(level - startLevel) < 1e-4 ||
+      Math.abs(level - endLevel) < 1e-4;
+
     const rawSegments: [[number, number], [number, number]][] = [];
 
     // Traverse cells
@@ -134,13 +202,18 @@ export function generateContours(
       const lat1 = bounds.minLat + (r + 1) * cellHeightDeg;
 
       for (let c = 0; c < cols - 1; c++) {
-        const lng0 = bounds.minLng + c * cellWidthDeg;
-        const lng1 = bounds.minLng + (c + 1) * cellWidthDeg;
-
         const v00 = values[r][c];
         const v10 = values[r][c + 1];
         const v11 = values[r + 1][c + 1];
         const v01 = values[r + 1][c];
+
+        // Do not fabricate contours across cells with missing/unavailable DEM vertices
+        if (
+          v00 === null || v10 === null || v11 === null || v01 === null ||
+          !Number.isFinite(v00) || !Number.isFinite(v10) || !Number.isFinite(v11) || !Number.isFinite(v01)
+        ) {
+          continue;
+        }
 
         let cellCode = 0;
         if (v00 >= level) cellCode |= 1;
@@ -150,23 +223,29 @@ export function generateContours(
 
         if (cellCode === 0 || cellCode === 15) continue;
 
-        // Edge intersection points
+        const lng0 = bounds.minLng + c * cellWidthDeg;
+        const lng1 = bounds.minLng + (c + 1) * cellWidthDeg;
+
+        // Edge intersection points [lng, lat]
         const bottom: [number, number] = [
-          lng0 + cellWidthDeg * ((level - v00) / (v10 - v00 || 1e-9)),
+          lng0 + cellWidthDeg * interpolateFraction(level, v00, v10),
           lat0
         ];
         const right: [number, number] = [
           lng1,
-          lat0 + cellHeightDeg * ((level - v10) / (v11 - v10 || 1e-9))
+          lat0 + cellHeightDeg * interpolateFraction(level, v10, v11)
         ];
         const top: [number, number] = [
-          lng0 + cellWidthDeg * ((level - v01) / (v11 - v01 || 1e-9)),
+          lng0 + cellWidthDeg * interpolateFraction(level, v01, v11),
           lat1
         ];
         const left: [number, number] = [
           lng0,
-          lat0 + cellHeightDeg * ((level - v00) / (v01 - v00 || 1e-9))
+          lat0 + cellHeightDeg * interpolateFraction(level, v00, v01)
         ];
+
+        // Center value for saddle point disambiguation (cases 5 and 10)
+        const centerVal = 0.25 * (v00 + v10 + v11 + v01);
 
         switch (cellCode) {
           case 1:
@@ -186,8 +265,13 @@ export function generateContours(
             rawSegments.push([right, top]);
             break;
           case 5:
-            rawSegments.push([left, top]);
-            rawSegments.push([bottom, right]);
+            if (centerVal >= level) {
+              rawSegments.push([left, bottom]);
+              rawSegments.push([right, top]);
+            } else {
+              rawSegments.push([left, top]);
+              rawSegments.push([bottom, right]);
+            }
             break;
           case 6:
           case 9:
@@ -198,8 +282,13 @@ export function generateContours(
             rawSegments.push([left, top]);
             break;
           case 10:
-            rawSegments.push([left, bottom]);
-            rawSegments.push([right, top]);
+            if (centerVal >= level) {
+              rawSegments.push([left, top]);
+              rawSegments.push([bottom, right]);
+            } else {
+              rawSegments.push([left, bottom]);
+              rawSegments.push([right, top]);
+            }
             break;
         }
       }
@@ -208,10 +297,10 @@ export function generateContours(
     if (rawSegments.length === 0) continue;
 
     // Chain segments into connected polylines
-    const chains = chainSegments(rawSegments);
+    const chains = chainSegments(rawSegments, chainTolerance);
 
     const color = getHypsometricColor(level, minElevationM, maxElevationM, rampName);
-    const strokeWidth = isIndex ? 1.75 : 0.85;
+    const strokeWidth = isIndex ? 1.75 : 0.9;
 
     for (let i = 0; i < chains.length; i++) {
       const coords = chains[i];
@@ -221,6 +310,7 @@ export function generateContours(
       for (let j = 0; j < coords.length - 1; j++) {
         lineLen += calculateGeodesicDistance(coords[j], coords[j + 1]).distanceM;
       }
+      if (lineLen < 0.5) continue; // Skip zero-length degenerate micro-segments
       totalLengthM += lineLen;
 
       contours.push({
@@ -253,10 +343,15 @@ export function generateContours(
     contours,
     minElevationM,
     maxElevationM,
-    intervalM,
+    meanElevationM,
+    reliefM,
+    intervalM: safeInterval,
     indexIntervalM,
     totalLengthKm: Math.round((totalLengthM / 1000) * 100) / 100,
-    legend
+    validSampleCount,
+    totalSampleCount,
+    legend,
+    metadata
   };
 }
 
@@ -265,10 +360,11 @@ export function generateContours(
  */
 function chainSegments(
   segments: [[number, number], [number, number]][],
-  tolerance: number = 0.00005
+  tolerance: number = 0.00002
 ): [number, number][][] {
   const result: [number, number][][] = [];
   const remaining = [...segments];
+  const tolSq = tolerance * tolerance;
 
   while (remaining.length > 0) {
     const current = remaining.pop()!;
@@ -285,24 +381,24 @@ function chainSegments(
         const [p1, p2] = seg;
 
         // Matches tail
-        if (distanceSq(tail, p1) < tolerance * tolerance) {
+        if (distanceSq(tail, p1) <= tolSq) {
           chain.push(p2);
           remaining.splice(i, 1);
           extended = true;
           break;
-        } else if (distanceSq(tail, p2) < tolerance * tolerance) {
+        } else if (distanceSq(tail, p2) <= tolSq) {
           chain.push(p1);
           remaining.splice(i, 1);
           extended = true;
           break;
         }
         // Matches head
-        else if (distanceSq(head, p2) < tolerance * tolerance) {
+        else if (distanceSq(head, p2) <= tolSq) {
           chain.unshift(p1);
           remaining.splice(i, 1);
           extended = true;
           break;
-        } else if (distanceSq(head, p1) < tolerance * tolerance) {
+        } else if (distanceSq(head, p1) <= tolSq) {
           chain.unshift(p2);
           remaining.splice(i, 1);
           extended = true;

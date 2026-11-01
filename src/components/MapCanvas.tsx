@@ -862,7 +862,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       {/* Floating Instructions & Live Measurements Banner during Drawing */}
       {drawingPoints.length > 0 && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-3.5 py-1.5 rounded shadow-xl flex items-center gap-3 text-xs text-[var(--text-primary)] z-20 transition-colors">
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 glass-panel px-3.5 py-1.5 rounded-lg flex items-center gap-3 text-xs text-[var(--text-primary)] z-20 transition-all">
           <div className="flex items-center gap-1.5 text-emerald-500 font-medium">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
             <span>Points: {drawingPoints.length}</span>
@@ -921,8 +921,40 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         </div>
       )}
 
+      {/* Floating Topographic Legend Overlay (Reference Image 2 Kepler.gl style) */}
+      {showContours && topographicDataset && topographicDataset.legend.length > 0 && (
+        <div className="absolute bottom-14 left-3 glass-panel rounded-xl p-2.5 w-44 z-20 pointer-events-auto text-[10px] space-y-1.5">
+          <div className="flex items-center justify-between border-b border-[var(--border-glass)] pb-1">
+            <span className="font-semibold text-[var(--text-primary)] uppercase tracking-wider">
+              DEM Contours
+            </span>
+            <span className="text-[var(--text-muted)] tabular-nums">
+              Δ {topographicDataset.intervalM}m
+            </span>
+          </div>
+          <div className="space-y-1 tabular-nums">
+            {topographicDataset.legend.slice().reverse().map((bin, idx) => (
+              <div key={idx} className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className="w-3 h-1.5 rounded-xs shrink-0"
+                    style={{ backgroundColor: bin.color }}
+                  />
+                  <span className="text-[var(--text-secondary)] font-medium">{bin.label}</span>
+                </div>
+                <span className="text-[9px] text-[var(--text-muted)]">ASL</span>
+              </div>
+            ))}
+          </div>
+          <div className="pt-1 border-t border-[var(--border-glass)] text-[9px] text-[var(--text-muted)] flex items-center justify-between tabular-nums">
+            <span>Relief: {topographicDataset.reliefM.toFixed(1)}m</span>
+            <span>Open-Meteo DEM</span>
+          </div>
+        </div>
+      )}
+
       {/* Map Control Buttons: Reset Bearing / North */}
-      <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-20">
+      <div className="absolute bottom-14 right-3 flex flex-col gap-1.5 z-20">
         <button
           onClick={() => {
             if (mapRef.current) {
@@ -931,7 +963,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           }}
           title="Reset North & Pitch"
           aria-label="Reset North and Pitch"
-          className="w-8 h-8 rounded bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-hover)] border border-[var(--border-subtle)] flex items-center justify-center text-[#7C5CFF] shadow-sm transition-colors"
+          className="w-8 h-8 rounded-lg glass-panel hover:border-[#7C5CFF] flex items-center justify-center text-[#7C5CFF] transition-colors"
         >
           <Compass className="w-4 h-4" />
         </button>

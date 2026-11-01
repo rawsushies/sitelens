@@ -101,7 +101,7 @@ export const ToolBar: React.FC<ToolBarProps> = ({
   ];
 
   return (
-    <aside className="w-12 bg-[var(--bg-surface)] border-r border-[var(--border-subtle)] flex flex-col items-center py-2.5 z-20 select-none transition-colors duration-150">
+    <aside className="w-12 glass-panel rounded-xl flex flex-col items-center py-2 z-20 select-none transition-all duration-150">
       {/* Primary Drawing & Selection Tools */}
       <div className="flex flex-col gap-1 w-full px-1.5">
         {tools.map((t) => {

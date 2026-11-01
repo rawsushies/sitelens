@@ -40,6 +40,7 @@ interface TopBarProps {
   isSaving: boolean;
   showContours?: boolean;
   onToggleContours?: () => void;
+  isLoadingContours?: boolean;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -54,7 +55,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   onExportCSV,
   isSaving,
   showContours = false,
-  onToggleContours
+  onToggleContours,
+  isLoadingContours = false
 }) => {
   const { theme, toggleTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
@@ -281,6 +283,26 @@ export const TopBar: React.FC<TopBarProps> = ({
             </div>
           )}
         </div>
+
+        {/* Topographic Contours Toggle */}
+        {onToggleContours && (
+          <button
+            onClick={onToggleContours}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded border font-medium transition-all ${
+              showContours
+                ? 'bg-[var(--brand-subtle)] border-[#7C5CFF] text-[#7C5CFF]'
+                : 'bg-[var(--bg-surface-secondary)] hover:bg-[var(--bg-surface-hover)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            }`}
+            title="Toggle Topographic Contours & Hypsometric Elevation Overlay"
+            aria-label="Toggle Topographic Contours"
+          >
+            <Mountain className={`w-3.5 h-3.5 ${showContours ? 'text-[#7C5CFF]' : 'text-[var(--text-muted)]'}`} />
+            <span className="text-[11px]">Contours</span>
+            {isLoadingContours && (
+              <span className="w-2.5 h-2.5 border-2 border-[#7C5CFF] border-t-transparent rounded-full animate-spin ml-0.5" />
+            )}
+          </button>
+        )}
 
         {/* UI Theme Switcher */}
         <button

@@ -33,6 +33,16 @@ import { calculateSolarAnalysis } from './solar';
 import { fetchClimateContext } from './climate';
 import { fetchUrbanContext } from './urban-analysis';
 import { generateSiteIntelligenceReport, reportToMarkdown } from './reporting';
+import {
+  fetchRealElevationGrid,
+  getBoundingBoxWithBuffer,
+  ElevationGrid
+} from './topography/elevation-grid';
+import {
+  generateContours,
+  TopographicDataset,
+  HypsometricRampName
+} from './topography/contours';
 
 import { TopBar } from './components/TopBar';
 import { ToolBar, ToolMode } from './components/ToolBar';
@@ -68,6 +78,15 @@ export default function App() {
   const [urbanContext, setUrbanContext] = useState<UrbanContextSummary | null>(null);
   const [isLoadingClimate, setIsLoadingClimate] = useState(false);
   const [isLoadingUrban, setIsLoadingUrban] = useState(false);
+
+  // Topographic DEM & Contour States
+  const [showContours, setShowContours] = useState(false);
+  const [elevationGrid, setElevationGrid] = useState<ElevationGrid | null>(null);
+  const [topographicDataset, setTopographicDataset] = useState<TopographicDataset | null>(null);
+  const [isLoadingContours, setIsLoadingContours] = useState(false);
+  const [contourError, setContourError] = useState<string | null>(null);
+  const [contourIntervalM, setContourIntervalM] = useState<number>(2);
+  const [contourRamp, setContourRamp] = useState<HypsometricRampName>('kepler');
 
   // Synchronous ref for project to guarantee no stale closures in event callbacks
   const projectRef = useRef(project);
@@ -173,6 +192,64 @@ export default function App() {
   useEffect(() => {
     loadClimate();
   }, [targetLocation[0], targetLocation[1]]);
+
+  // Compute canonical site boundary signature for topographic DEM sampling
+  const activePolygonRing: [number, number][] | null =
+    activeFeature?.geometry.type === 'Polygon' && activeFeature.geometry.coordinates[0]?.length >= 3
+      ? activeFeature.geometry.coordinates[0]
+      : null;
+
+  const topoBoundsSignature = activePolygonRing
+    ? JSON.stringify(activePolygonRing.map(pt => [Number(pt[0].toFixed(5)), Number(pt[1].toFixed(5))]))
+    : `${targetLocation[0].toFixed(4)},${targetLocation[1].toFixed(4)}`;
+
+  const loadTopography = useCallback(async (bypassCache: boolean = false) => {
+    setIsLoadingContours(true);
+    setContourError(null);
+    try {
+      const bounds = activePolygonRing
+        ? getBoundingBoxWithBuffer(activePolygonRing, 140)
+        : getBoundingBoxWithBuffer(targetLocation, 280);
+
+      const res = await fetchRealElevationGrid(bounds, {
+        cols: 9,
+        rows: 9,
+        bypassCache
+      });
+
+      if (!res.grid || res.status === 'unavailable' || res.status === 'error' || res.status === 'empty') {
+        setElevationGrid(null);
+        setTopographicDataset(null);
+        setContourError(res.error?.message || 'Real DEM elevation data unavailable for this site.');
+        return;
+      }
+
+      setElevationGrid(res.grid);
+    } catch (err: any) {
+      setElevationGrid(null);
+      setTopographicDataset(null);
+      setContourError(err?.message || 'Failed to sample DEM elevation grid.');
+    } finally {
+      setIsLoadingContours(false);
+    }
+  }, [topoBoundsSignature]);
+
+  // Fetch DEM grid when Contours overlay is enabled or site boundary geometry changes
+  useEffect(() => {
+    if (showContours) {
+      loadTopography(false);
+    }
+  }, [showContours, topoBoundsSignature, loadTopography]);
+
+  // Re-compute Marching Squares contours immediately when grid, interval, or ramp changes
+  useEffect(() => {
+    if (!elevationGrid) {
+      setTopographicDataset(null);
+      return;
+    }
+    const dataset = generateContours(elevationGrid, contourIntervalM, contourRamp);
+    setTopographicDataset(dataset);
+  }, [elevationGrid, contourIntervalM, contourRamp]);
 
   // Project Management Handlers
   const handleSaveProject = async () => {
@@ -459,45 +536,9 @@ export default function App() {
   );
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[var(--bg-workspace)] text-[var(--text-primary)] overflow-hidden font-sans transition-colors duration-150">
-      {/* Top Bar */}
-      <TopBar
-        project={project}
-        onUpdateProjectName={(name) => setProject(p => ({ ...p, name }))}
-        onSelectBasemap={handleSelectBasemap}
-        onFlyToLocation={handleFlyToLocation}
-        onSaveProject={handleSaveProject}
-        onOpenProjectManager={() => setIsProjectModalOpen(true)}
-        onOpenReportModal={() => setIsReportModalOpen(true)}
-        onExportGeoJSON={() => {
-          const geojson = exportToGeoJSON(project);
-          downloadFile(geojson, `${project.name.toLowerCase().replace(/\s+/g, '_')}.geojson`, 'application/geo+json');
-        }}
-        onExportCSV={() => {
-          const csv = exportToCSV(project);
-          downloadFile(csv, `${project.name.toLowerCase().replace(/\s+/g, '_')}_metrics.csv`, 'text/csv');
-        }}
-        isSaving={isSaving}
-      />
-
-      {/* Main Workspace: Left ToolBar, Central Map Canvas, Right Inspector */}
-      <div className="flex-1 flex overflow-hidden relative">
-        <ToolBar
-          currentTool={currentTool}
-          onSelectTool={setCurrentTool}
-          canUndo={historyManagerRef.current.canUndo()}
-          canRedo={historyManagerRef.current.canRedo()}
-          onUndo={handleUndo}
-          onRedo={handleRedo}
-          hasSelectedFeature={!!project.activeFeatureId}
-          onDeleteSelected={() => {
-            if (project.activeFeatureId) {
-              handleDeleteFeature(project.activeFeatureId);
-            }
-          }}
-          onFitBounds={() => setFitBoundsTrigger(t => t + 1)}
-        />
-
+    <div className="relative h-screen w-screen bg-[var(--bg-workspace)] text-[var(--text-primary)] overflow-hidden font-sans transition-colors duration-150">
+      {/* Full-Bleed Interactive Map Canvas */}
+      <div className="absolute inset-0 z-0 flex">
         <MapCanvas
           project={project}
           currentTool={currentTool}
@@ -512,33 +553,102 @@ export default function App() {
           completeTrigger={completeDrawingTrigger}
           cancelTrigger={cancelDrawingTrigger}
           onDrawingActiveChange={setIsDrawingActive}
-        />
-
-        <InspectorPanel
-          project={project}
-          activeFeature={activeFeature || undefined}
-          polygonAnalysis={polygonAnalysis}
-          lineAnalysis={lineAnalysis}
-          pointReport={pointReport}
-          solarAnalysis={solarAnalysis}
-          climateData={climateData}
-          urbanContext={urbanContext}
-          isLoadingClimate={isLoadingClimate}
-          isLoadingUrban={isLoadingUrban}
-          onRefreshUrban={loadUrban}
-          onRefreshClimate={loadClimate}
-          onSelectFeature={(id) => setProject(p => ({ ...p, activeFeatureId: id }))}
-          onDeleteFeature={handleDeleteFeature}
-          onUpdateFeatureName={handleUpdateFeatureName}
+          showContours={showContours}
+          topographicDataset={topographicDataset}
         />
       </div>
 
-      {/* Bottom Bar: Coordinates, Datum, Projection */}
-      <BottomBar
-        cursorCoords={cursorCoords}
-        centerCoords={project.center}
-        zoom={project.zoom}
-      />
+      {/* Floating Glass TopBar HUD */}
+      <div className="absolute top-3 left-3 right-3 z-30 pointer-events-none">
+        <div className="pointer-events-auto">
+          <TopBar
+            project={project}
+            onUpdateProjectName={(name) => setProject(p => ({ ...p, name }))}
+            onSelectBasemap={handleSelectBasemap}
+            onFlyToLocation={handleFlyToLocation}
+            onSaveProject={handleSaveProject}
+            onOpenProjectManager={() => setIsProjectModalOpen(true)}
+            onOpenReportModal={() => setIsReportModalOpen(true)}
+            onExportGeoJSON={() => {
+              const geojson = exportToGeoJSON(project);
+              downloadFile(geojson, `${project.name.toLowerCase().replace(/\s+/g, '_')}.geojson`, 'application/geo+json');
+            }}
+            onExportCSV={() => {
+              const csv = exportToCSV(project);
+              downloadFile(csv, `${project.name.toLowerCase().replace(/\s+/g, '_')}_metrics.csv`, 'text/csv');
+            }}
+            isSaving={isSaving}
+            showContours={showContours}
+            onToggleContours={() => setShowContours(v => !v)}
+            isLoadingContours={isLoadingContours}
+          />
+        </div>
+      </div>
+
+      {/* Floating Left CAD Tool Dock */}
+      <div className="absolute top-17 left-3 z-20 pointer-events-none">
+        <div className="pointer-events-auto">
+          <ToolBar
+            currentTool={currentTool}
+            onSelectTool={setCurrentTool}
+            canUndo={historyManagerRef.current.canUndo()}
+            canRedo={historyManagerRef.current.canRedo()}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            hasSelectedFeature={!!project.activeFeatureId}
+            onDeleteSelected={() => {
+              if (project.activeFeatureId) {
+                handleDeleteFeature(project.activeFeatureId);
+              }
+            }}
+            onFitBounds={() => setFitBoundsTrigger(t => t + 1)}
+          />
+        </div>
+      </div>
+
+      {/* Floating Right Analytical Inspector Drawer */}
+      <div className="absolute top-17 right-3 bottom-13 z-20 pointer-events-none flex">
+        <div className="pointer-events-auto h-full flex">
+          <InspectorPanel
+            project={project}
+            activeFeature={activeFeature || undefined}
+            polygonAnalysis={polygonAnalysis}
+            lineAnalysis={lineAnalysis}
+            pointReport={pointReport}
+            solarAnalysis={solarAnalysis}
+            climateData={climateData}
+            urbanContext={urbanContext}
+            isLoadingClimate={isLoadingClimate}
+            isLoadingUrban={isLoadingUrban}
+            onRefreshUrban={loadUrban}
+            onRefreshClimate={loadClimate}
+            onSelectFeature={(id) => setProject(p => ({ ...p, activeFeatureId: id }))}
+            onDeleteFeature={handleDeleteFeature}
+            onUpdateFeatureName={handleUpdateFeatureName}
+            showContours={showContours}
+            onToggleContours={() => setShowContours(v => !v)}
+            topographicDataset={topographicDataset}
+            isLoadingContours={isLoadingContours}
+            contourError={contourError}
+            contourIntervalM={contourIntervalM}
+            onChangeContourInterval={setContourIntervalM}
+            contourRamp={contourRamp}
+            onChangeContourRamp={setContourRamp}
+            onRefreshContours={() => loadTopography(true)}
+          />
+        </div>
+      </div>
+
+      {/* Floating Bottom Status & Coordinate Telemetry Bar */}
+      <div className="absolute bottom-3 left-3 right-3 z-30 pointer-events-none">
+        <div className="pointer-events-auto">
+          <BottomBar
+            cursorCoords={cursorCoords}
+            centerCoords={project.center}
+            zoom={project.zoom}
+          />
+        </div>
+      </div>
 
       {/* Project Manager Modal */}
       <ProjectModal
